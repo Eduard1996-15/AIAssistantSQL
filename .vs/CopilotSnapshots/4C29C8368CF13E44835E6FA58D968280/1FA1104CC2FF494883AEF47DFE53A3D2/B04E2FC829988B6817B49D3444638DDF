@@ -1,0 +1,479 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class QueryController : Controller
+    {
+        private readonly IOllamaService _ollamaService;
+        private readonly ISchemaLoaderService _schemaLoaderService;
+        private readonly ISqlValidatorService _sqlValidatorService;
+        private readonly IQueryRepository _queryRepository;
+        private readonly ILogger<QueryController> _logger;
+
+        // En memoria para demo - en producción usar base de datos
+        private static List<QueryHistory> _queryHistory = new();
+        
+        // NUEVO: Manejo de conversaciones
+        private static Dictionary<Guid, Conversation> _conversations = new();
+        private static Guid _currentConversationId = Guid.Empty;
+
+        public QueryController(
+            IOllamaService ollamaService,
+            ISchemaLoaderService schemaLoaderService,
+            ISqlValidatorService sqlValidatorService,
+            IQueryRepository queryRepository,
+            ILogger<QueryController> logger)
+        {
+            _ollamaService = ollamaService;
+            _schemaLoaderService = schemaLoaderService;
+            _sqlValidatorService = sqlValidatorService;
+            _queryRepository = queryRepository;
+            _logger = logger;
+        }
+
+        public IActionResult Index()
+        {
+            var currentConnection = DatabaseController.GetCurrentConnection();
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+
+            // Crear nueva conversación si no existe una activa
+            if (_currentConversationId == Guid.Empty)
+            {
+                _currentConversationId = Guid.NewGuid();
+                _conversations[_currentConversationId] = new Conversation
+                {
+                    Id = _currentConversationId,
+                    StartedAt = DateTime.Now,
+                    LastMessageAt = DateTime.Now,
+                    DatabaseName = currentSchema?.DatabaseName ?? "Unknown"
+                };
+            }
+
+            var viewModel = new QueryViewModel
+            {
+                History = _queryHistory.OrderByDescending(q => q.Timestamp).Take(10).ToList(),
+                HasActiveConnection = currentConnection != null,
+                DatabaseName = currentSchema?.DatabaseName
+            };
+
+            if (currentConnection == null || currentSchema == null)
+            {
+                TempData["Warning"] = "?? Primero debes configurar la conexión a tu base de datos. <a href='/Database'>Ir a Configuración</a>";
+            }
+
+            return View(viewModel);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Execute(string naturalLanguageQuery)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var response = new QueryResponse();
+
+            try
+            {
+                // Validar que hay esquema cargado
+                var currentSchema = _schemaLoaderService.GetCurrentSchema();
+                if (currentSchema == null)
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "No hay esquema de base de datos cargado. Por favor cargue un esquema primero en la sección de Configuración.";
+                    return Json(response);
+                }
+
+                // Validar que hay conexión configurada
+                var currentConnection = DatabaseController.GetCurrentConnection();
+                string? connStr = currentConnection?.ConnectionString;
+                
+                if (currentConnection == null)
+                {
+                    connStr = HttpContext.Session.GetString("ConnectionString");
+                    if (string.IsNullOrWhiteSpace(connStr))
+                    {
+                        response.Success = false;
+                        response.ErrorMessage = "No hay conexión configurada. Por favor configure la cadena de conexión en la sección de Configuración.";
+                        return Json(response);
+                    }
+                }
+
+                // Validar que Ollama está disponible
+                var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
+                if (!isOllamaAvailable)
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "Ollama no está disponible. Verifique que esté ejecutándose en http://localhost:11434";
+                    return Json(response);
+                }
+
+                // Generar SQL desde lenguaje natural
+                _logger.LogInformation($"Procesando consulta: {naturalLanguageQuery}");
+                var generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(naturalLanguageQuery, currentSchema);
+
+                response.GeneratedSQL = generatedSql;
+
+                // Validar que el SQL sea seguro (solo SELECT)
+                if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "La consulta generada no es válida o no es una consulta SELECT segura.";
+                    response.NaturalLanguageResponse = "? No pude generar una consulta SQL válida para tu pregunta. Por favor intenta reformularla de manera más simple.";
+                    
+                    AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
+
+                    return Json(response);
+                }
+
+                // NUEVO: Validar que las tablas mencionadas existen en el esquema
+                var queryValidation = ValidateQueryAgainstSchema(generatedSql, currentSchema);
+                if (!queryValidation.IsValid)
+                {
+                    _logger.LogWarning($"Consulta SQL sospechosa: {queryValidation.Reason}");
+                    _logger.LogWarning($"SQL: {generatedSql}");
+                    
+                    // Reintentar con un prompt más específico
+                    _logger.LogInformation("Reintentando generación de SQL con prompt mejorado...");
+                    var retryPrompt = $"PREVIOUS ATTEMPT WAS INCORRECT: {queryValidation.Reason}\n\nPlease generate a SIMPLE query for: {naturalLanguageQuery}";
+                    generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(retryPrompt, currentSchema);
+                    
+                    response.GeneratedSQL = generatedSql;
+                    
+                    // Validar de nuevo
+                    if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                    {
+                        response.Success = false;
+                        response.ErrorMessage = "No se pudo generar una consulta SQL válida después de varios intentos.";
+                        response.NaturalLanguageResponse = "? Tuve problemas generando la consulta SQL. Intenta ser más específico: por ejemplo, '¿Cuántos registros hay en la tabla Usuario?' o 'Muestra el nombre de todos los usuarios activos'.";
+                        
+                        AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
+                        return Json(response);
+                    }
+                }
+
+                // Limpiar SQL
+                var cleanedSql = _sqlValidatorService.CleanSqlQuery(generatedSql);
+
+                // Obtener configuración de conexión
+                var connectionString = connStr ?? HttpContext.Session.GetString("ConnectionString");
+                var databaseType = currentConnection?.DatabaseType ?? currentSchema.DatabaseType;
+
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "No hay cadena de conexión configurada. Por favor configure la conexión primero.";
+                    return Json(response);
+                }
+
+                // Ejecutar consulta
+                _logger.LogInformation($"Ejecutando SQL: {cleanedSql}");
+                var results = await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType);
+
+                stopwatch.Stop();
+
+                // NUEVO: Obtener contexto de conversación
+                var conversationHistory = GetConversationHistory();
+
+                // NUEVO: Interpretar resultados con IA
+                _logger.LogInformation($"?? Interpretando resultados con IA...");
+                var naturalLanguageResponse = await _ollamaService.InterpretQueryResultsAsync(
+                    naturalLanguageQuery,
+                    cleanedSql,
+                    results,
+                    conversationHistory
+                );
+
+                response.Success = true;
+                response.Results = results;
+                response.RowCount = results.Count;
+                response.ExecutionTime = stopwatch.Elapsed;
+                response.NaturalLanguageResponse = naturalLanguageResponse;
+
+                // Agregar al historial con respuesta de IA
+                AddToHistory(naturalLanguageQuery, cleanedSql, naturalLanguageResponse, true);
+
+                // Agregar a la conversación actual
+                AddToConversation(naturalLanguageQuery, cleanedSql, naturalLanguageResponse, true);
+
+                _logger.LogInformation($"? Consulta exitosa: {results.Count} filas retornadas");
+
+                return Json(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al ejecutar consulta");
+                
+                stopwatch.Stop();
+
+                response.Success = false;
+                response.ErrorMessage = ex.Message;
+                response.ExecutionTime = stopwatch.Elapsed;
+                response.NaturalLanguageResponse = $"? Ocurrió un error al procesar tu consulta: {ex.Message}";
+
+                AddToHistory(naturalLanguageQuery, response.GeneratedSQL ?? "", response.NaturalLanguageResponse, false);
+                AddToConversation(naturalLanguageQuery, response.GeneratedSQL ?? "", response.NaturalLanguageResponse, false);
+
+                return Json(response);
+            }
+        }
+
+        [HttpPost]
+        public IActionResult NewConversation()
+        {
+            _currentConversationId = Guid.NewGuid();
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+            
+            _conversations[_currentConversationId] = new Conversation
+            {
+                Id = _currentConversationId,
+                StartedAt = DateTime.Now,
+                LastMessageAt = DateTime.Now,
+                DatabaseName = currentSchema?.DatabaseName ?? "Unknown"
+            };
+
+            TempData["Success"] = "? Nueva conversación iniciada";
+            return RedirectToAction(nameof(Index));
+        }
+
+        public IActionResult History()
+        {
+            return View(_queryHistory.OrderByDescending(q => q.Timestamp).ToList());
+        }
+
+        public IActionResult Conversations()
+        {
+            var conversations = _conversations.Values
+                .OrderByDescending(c => c.LastMessageAt)
+                .ToList();
+
+            return View(conversations);
+        }
+
+        [HttpPost]
+        public IActionResult ClearHistory()
+        {
+            _queryHistory.Clear();
+            TempData["Success"] = "Historial limpiado exitosamente";
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpPost]
+        public IActionResult ClearConversations()
+        {
+            _conversations.Clear();
+            _currentConversationId = Guid.Empty;
+            TempData["Success"] = "Todas las conversaciones eliminadas";
+            return RedirectToAction(nameof(Index));
+        }
+
+        private void AddToHistory(string question, string sql, string aiResponse, bool success)
+        {
+            _queryHistory.Add(new QueryHistory
+            {
+                Timestamp = DateTime.Now,
+                NaturalLanguageQuery = question,
+                GeneratedSQL = sql,
+                NaturalLanguageResponse = aiResponse,
+                Success = success,
+                ConversationId = _currentConversationId
+            });
+        }
+
+        private void AddToConversation(string question, string sql, string aiResponse, bool success)
+        {
+            if (_conversations.TryGetValue(_currentConversationId, out var conversation))
+            {
+                conversation.Messages.Add(new ConversationMessage
+                {
+                    Timestamp = DateTime.Now,
+                    UserQuestion = question,
+                    GeneratedSQL = sql,
+                    AIResponse = aiResponse,
+                    Success = success
+                });
+
+                conversation.LastMessageAt = DateTime.Now;
+            }
+        }
+
+        private List<string> GetConversationHistory()
+        {
+            if (_conversations.TryGetValue(_currentConversationId, out var conversation))
+            {
+                return conversation.Messages
+                    .OrderBy(m => m.Timestamp)
+                    .Select(m => $"Usuario: {m.UserQuestion}\nIA: {m.AIResponse}")
+                    .ToList();
+            }
+
+            return new List<string>();
+        }
+
+        /// <summary>
+        /// Valida que la consulta SQL generada tenga sentido con el esquema de la base de datos
+        /// </summary>
+        private (bool IsValid, string Reason) ValidateQueryAgainstSchema(string sql, DatabaseSchema schema)
+        {
+            var sqlUpper = sql.ToUpper();
+            
+            // Extraer nombres de tablas del SQL (después de FROM y JOIN)
+            var tableNames = new List<string>();
+            var words = sql.Split(new[] { ' ', '\n', '\t', '(', ')' }, StringSplitOptions.RemoveEmptyEntries);
+            
+            for (int i = 0; i < words.Length - 1; i++)
+            {
+                if (words[i].Equals("FROM", StringComparison.OrdinalIgnoreCase) ||
+                    words[i].Equals("JOIN", StringComparison.OrdinalIgnoreCase))
+                {
+                    var tableName = words[i + 1].Trim();
+                    // Remover alias (AS alias)
+                    if (tableName.Contains("AS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tableName = tableName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                    }
+                    tableName = tableName.Replace(";", "").Trim();
+                    tableNames.Add(tableName);
+                }
+            }
+
+            // Verificar que todas las tablas mencionadas existen en el esquema
+            foreach (var tableName in tableNames)
+            {
+                var exists = schema.Tables.Any(t => 
+                    t.TableName.Equals(tableName, StringComparison.OrdinalIgnoreCase));
+                
+                if (!exists)
+                {
+                    return (false, $"La tabla '{tableName}' no existe en el esquema de la base de datos. Tablas disponibles: {string.Join(", ", schema.Tables.Select(t => t.TableName))}");
+                }
+            }
+
+            // NUEVO: Validar columnas mencionadas en SELECT
+            var selectMatch = System.Text.RegularExpressions.Regex.Match(sql, @"SELECT\s+(.+?)\s+FROM", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (selectMatch.Success)
+            {
+                var selectClause = selectMatch.Groups[1].Value;
+                
+                // Si no es SELECT *, verificar columnas
+                if (!selectClause.Trim().Equals("*"))
+                {
+                    // Extraer nombres de columnas (considerar alias con tabla.columna)
+                    var columnParts = selectClause.Split(',')
+                        .Select(p => p.Trim())
+                        .ToList();
+                    
+                    foreach (var columnName in columnParts)
+                    {
+                        // Limpiar funciones agregadas (COUNT, SUM, etc.)
+                        if (columnName.Contains("(") && columnName.Contains(")"))
+                        {
+                            continue; // Skip aggregate functions
+                        }
+                        
+                        // Remover alias de tabla (u.nombre -> nombre)
+                        string actualColumnName = columnName;
+                        if (actualColumnName.Contains("."))
+                        {
+                            actualColumnName = actualColumnName.Split('.')[1].Trim();
+                        }
+                        
+                        // Remover alias de columna (nombre AS name -> nombre)
+                        if (actualColumnName.Contains(" AS ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            actualColumnName = actualColumnName.Split(new[] { " AS " }, StringSplitOptions.None)[0].Trim();
+                        }
+                        
+                        // Verificar si la columna existe en alguna tabla
+                        var columnExists = schema.Tables.Any(t => 
+                            t.Columns.Any(c => c.ColumnName.Equals(actualColumnName, StringComparison.OrdinalIgnoreCase)));
+                        
+                        if (!columnExists)
+                        {
+                            // Buscar columna similar para sugerir
+                            var suggestion = FindSimilarColumn(actualColumnName, schema);
+                            var suggestionText = suggestion != null 
+                                ? $" ¿Quisiste decir '{suggestion}'?" 
+                                : "";
+                            
+                            return (false, $"La columna '{actualColumnName}' no existe en ninguna tabla del esquema.{suggestionText}");
+                        }
+                    }
+                }
+            }
+
+            // Verificar JOINs innecesarios con tablas no relacionadas
+            if (sqlUpper.Contains("NOTIFICACION") && 
+                (sqlUpper.Contains("USUARIO") || sqlUpper.Contains("USER")))
+            {
+                // Verificar si realmente hay una FK entre estas tablas
+                var notificacionTable = schema.Tables.FirstOrDefault(t => 
+                    t.TableName.Equals("Notificacion", StringComparison.OrdinalIgnoreCase));
+                
+                if (notificacionTable != null)
+                {
+                    var hasUserFK = notificacionTable.ForeignKeys.Any(fk =>
+                        fk.ReferencedTable.Equals("Usuario", StringComparison.OrdinalIgnoreCase));
+                    
+                    if (!hasUserFK && sqlUpper.Contains("JOIN"))
+                    {
+                        return (false, "No hay relación directa entre Usuario y Notificacion. Para preguntas sobre usuarios, solo consulta la tabla Usuario.");
+                    }
+                }
+            }
+
+            return (true, string.Empty);
+        }
+
+        /// <summary>
+        /// Busca una columna similar en el esquema (para sugerencias)
+        /// </summary>
+        private string? FindSimilarColumn(string searchColumn, DatabaseSchema schema)
+        {
+            // Mapeo de términos comunes a columnas reales
+            var commonMappings = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "nombre", new[] { "Name", "UserName" } },
+                { "name", new[] { "Name", "UserName" } },
+                { "usuario", new[] { "UserName" } },
+                { "email", new[] { "Email" } },
+                { "telefono", new[] { "PhoneNumber" } },
+                { "phone", new[] { "PhoneNumber" } },
+                { "grado", new[] { "Grado" } },
+                { "nivel", new[] { "Nivel" } },
+                { "activo", new[] { "activo" } },
+                { "active", new[] { "activo" } }
+            };
+
+            // Buscar en mapeo común
+            if (commonMappings.TryGetValue(searchColumn, out var suggestions))
+            {
+                // Verificar que la sugerencia existe en el esquema
+                foreach (var suggestion in suggestions)
+                {
+                    foreach (var table in schema.Tables)
+                    {
+                        if (table.Columns.Any(c => c.ColumnName.Equals(suggestion, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            return suggestion;
+                        }
+                    }
+                }
+            }
+
+            // Buscar columnas que contengan el término buscado
+            foreach (var table in schema.Tables)
+            {
+                var similarColumn = table.Columns.FirstOrDefault(c => 
+                    c.ColumnName.Contains(searchColumn, StringComparison.OrdinalIgnoreCase));
+                
+                if (similarColumn != null)
+                {
+                    return similarColumn.ColumnName;
+                }
+            }
+
+            return null;
+        }
+    }
+}

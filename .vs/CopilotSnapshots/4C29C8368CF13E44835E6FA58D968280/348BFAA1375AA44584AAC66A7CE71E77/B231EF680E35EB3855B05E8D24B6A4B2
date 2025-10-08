@@ -1,0 +1,24 @@
+﻿namespace AIAssistantSQL.Models
+{
+    /// <summary>
+    /// Modelo para la solicitud de consulta en lenguaje natural
+    /// </summary>
+    public class QueryRequest
+    {
+        public string NaturalLanguageQuery { get; set; } = string.Empty;
+        public string? DatabaseName { get; set; }
+    }
+
+    /// <summary>
+    /// Modelo para la respuesta de una consulta
+    /// </summary>
+    public class QueryResponse
+    {
+        public bool Success { get; set; }
+        public string GeneratedSQL { get; set; } = string.Empty;
+        public List<Dictionary<string, object?>>? Results { get; set; }
+        public string? ErrorMessage { get; set; }
+        public int? RowCount { get; set; }
+        public TimeSpan ExecutionTime { get; set; }
+    }
+}

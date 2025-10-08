@@ -1,0 +1,48 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Repositories;
+using AIAssistantSQL.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllersWithViews();
+
+// Configurar sesiones para mantener el estado de la conexión
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(2);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
+// Registrar servicios e interfaces
+builder.Services.AddSingleton<ISchemaLoaderService, SchemaLoaderService>();
+builder.Services.AddSingleton<IOllamaService, OllamaService>();
+builder.Services.AddSingleton<ISqlValidatorService, SqlValidatorService>();
+builder.Services.AddScoped<IQueryRepository, QueryRepository>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthorization();
+app.UseSession();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// app.MapGet("/", () => "Hello World!");
+
+app.Run();

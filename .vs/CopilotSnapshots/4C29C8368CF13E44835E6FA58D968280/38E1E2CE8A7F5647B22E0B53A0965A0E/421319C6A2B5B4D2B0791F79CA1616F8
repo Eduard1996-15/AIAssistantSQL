@@ -1,0 +1,55 @@
+﻿using AIAssistantSQL.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class SettingsController : Controller
+    {
+        private readonly IOllamaService _ollamaService;
+        private readonly ILogger<SettingsController> _logger;
+
+        public SettingsController(IOllamaService ollamaService, ILogger<SettingsController> logger)
+        {
+            _ollamaService = ollamaService;
+            _logger = logger;
+        }
+
+        public async Task<IActionResult> Index()
+        {
+            var models = await _ollamaService.GetAvailableModelsAsync();
+            var currentModel = _ollamaService.GetCurrentModel();
+
+            ViewBag.AvailableModels = models;
+            ViewBag.CurrentModel = currentModel;
+
+            return View();
+        }
+
+        [HttpPost]
+        public IActionResult ChangeModel(string modelName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(modelName))
+                {
+                    TempData["Error"] = "Por favor selecciona un modelo válido";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                _ollamaService.SetModel(modelName);
+                
+                TempData["Success"] = $"? Modelo cambiado exitosamente a: <strong>{modelName}</strong><br/>Los próximas consultas usarán este modelo.";
+                
+                _logger.LogInformation($"Usuario cambió el modelo a: {modelName}");
+
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cambiar modelo");
+                TempData["Error"] = $"Error al cambiar modelo: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+    }
+}

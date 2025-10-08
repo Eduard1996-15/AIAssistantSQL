@@ -1,0 +1,143 @@
+﻿@model DatabaseConfigViewModel
+@{
+    ViewData["Title"] = "Configuración de Base de Datos";
+}
+
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">
+            <i class="bi bi-database-gear"></i> Configuración de Base de Datos
+        </h1>
+    </div>
+</div>
+
+@if (Model.IsSchemaLoaded)
+{
+    <div class="alert alert-success">
+        <h5><i class="bi bi-check-circle"></i> Esquema Cargado</h5>
+        <p class="mb-1"><strong>Base de Datos:</strong> @Model.LoadedDatabaseName</p>
+        <p class="mb-1"><strong>Tipo:</strong> @Model.DatabaseType</p>
+        <p class="mb-1"><strong>Tablas:</strong> @Model.TableCount</p>
+        <p class="mb-0"><strong>Cargado:</strong> @Model.LoadedAt?.ToString("dd/MM/yyyy HH:mm:ss")</p>
+        <a asp-controller="Database" asp-action="ViewSchema" class="btn btn-sm btn-outline-success mt-2">
+            <i class="bi bi-eye"></i> Ver Esquema Completo
+        </a>
+    </div>
+}
+else
+{
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle"></i> No hay esquema cargado. Por favor cargue un esquema usando una de las opciones abajo.
+    </div>
+}
+
+<div class="row g-4">
+    <!-- Opción 1: Cargar desde archivo -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Opción 1: Cargar desde Archivo</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">Sube un archivo JSON con el esquema de tu base de datos previamente guardado.</p>
+                
+                <form asp-controller="Database" asp-action="LoadFromFile" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="schemaFile" class="form-label">Archivo JSON de Esquema</label>
+                        <input type="file" class="form-control" id="schemaFile" name="schemaFile" accept=".json" required>
+                        <div class="form-text">Selecciona un archivo .json con el esquema de la base de datos</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-upload"></i> Cargar Esquema
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Opción 2: Cargar desde conexión -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-plug"></i> Opción 2: Cargar desde Conexión</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">Conecta directamente a tu base de datos para cargar el esquema automáticamente.</p>
+                
+                <form asp-controller="Database" asp-action="LoadFromConnectionString" method="post">
+                    <div class="mb-3">
+                        <label for="databaseType" class="form-label">Tipo de Base de Datos</label>
+                        <select class="form-select" id="databaseType" name="databaseType" required>
+                            <option value="0">SQL Server</option>
+                            <option value="1">PostgreSQL</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="connectionString" class="form-label">Cadena de Conexión</label>
+                        <textarea class="form-control" id="connectionString" name="connectionString" rows="3" required placeholder="Server=localhost;Database=MyDB;User Id=sa;Password=****;"></textarea>
+                        <div class="form-text">
+                            <strong>Ejemplos:</strong><br/>
+                            <small>
+                                <strong>SQL Server:</strong> Server=localhost;Database=MyDB;User Id=sa;Password=****;TrustServerCertificate=True<br/>
+                                <strong>PostgreSQL:</strong> Host=localhost;Database=MyDB;Username=postgres;Password=****
+                            </small>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-info">
+                        <i class="bi bi-plug"></i> Conectar y Cargar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.IsSchemaLoaded)
+{
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-floppy"></i> Guardar Esquema Actual</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Guarda el esquema actual en un archivo JSON para reutilizarlo en el futuro.</p>
+                    
+                    <form asp-controller="Database" asp-action="SaveSchemaToFile" method="post" class="row g-3">
+                        <div class="col-md-8">
+                            <label for="fileName" class="form-label">Nombre del Archivo</label>
+                            <input type="text" class="form-control" id="fileName" name="fileName" placeholder="@($"{Model.LoadedDatabaseName}_schema.json")" value="@($"{Model.LoadedDatabaseName}_schema.json")">
+                            <div class="form-text">El archivo se guardará en la carpeta wwwroot/uploads</div>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-floppy"></i> Guardar Esquema
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Información</h5>
+            </div>
+            <div class="card-body">
+                <h6>¿Qué es el esquema de base de datos?</h6>
+                <p>El esquema es una representación de la estructura de tu base de datos que incluye:</p>
+                <ul>
+                    <li>Nombres de todas las tablas</li>
+                    <li>Columnas y sus tipos de datos</li>
+                    <li>Claves primarias y foráneas</li>
+                    <li>Relaciones entre tablas</li>
+                </ul>
+                <p class="mb-0">Esta información es esencial para que la IA pueda generar consultas SQL precisas basadas en tu lenguaje natural.</p>
+            </div>
+        </div>
+    </div>
+</div>

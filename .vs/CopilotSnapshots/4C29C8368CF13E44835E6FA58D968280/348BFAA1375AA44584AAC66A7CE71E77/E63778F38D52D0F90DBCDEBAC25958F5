@@ -1,0 +1,320 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using System.Text;
+using System.Text.Json;
+
+namespace AIAssistantSQL.Services
+{
+    /// <summary>
+    /// Servicio para interactuar con Ollama y generar consultas SQL
+    /// </summary>
+    public class OllamaService : IOllamaService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<OllamaService> _logger;
+        private readonly string _ollamaUrl;
+        private readonly string _model;
+
+        public OllamaService(IConfiguration configuration, ILogger<OllamaService> logger)
+        {
+            _configuration = configuration;
+            _logger = logger;
+            _ollamaUrl = _configuration["Ollama:Url"] ?? "http://localhost:11434";
+            _model = _configuration["Ollama:Model"] ?? "llama2";
+            
+            _httpClient = new HttpClient
+            {
+                BaseAddress = new Uri(_ollamaUrl),
+                Timeout = TimeSpan.FromMinutes(5)
+            };
+            
+            _logger.LogInformation($"OllamaService inicializado - URL: {_ollamaUrl}, Modelo: {_model}");
+        }
+
+        public async Task<string> GenerateSQLFromNaturalLanguageAsync(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            try
+            {
+                var prompt = BuildPrompt(naturalLanguageQuery, schema);
+
+                _logger.LogInformation($"🤖 Enviando consulta a Ollama con modelo: {_model}");
+
+                // Intentar primero con /api/generate (API antigua)
+                var generatedText = await TryGenerateEndpoint(prompt);
+                
+                // Si falla, intentar con /api/chat (API nueva)
+                if (string.IsNullOrEmpty(generatedText))
+                {
+                    _logger.LogInformation("Intentando con endpoint /api/chat...");
+                    generatedText = await TryChatEndpoint(prompt);
+                }
+
+                if (string.IsNullOrWhiteSpace(generatedText))
+                {
+                    throw new Exception("Ollama generó una respuesta vacía. Intenta reformular tu pregunta.");
+                }
+
+                var sql = ExtractSqlFromResponse(generatedText);
+
+                _logger.LogInformation($"✅ SQL generado exitosamente: {sql}");
+
+                return sql;
+            }
+            catch (Exception ex) when (ex is not HttpRequestException)
+            {
+                _logger.LogError(ex, "❌ Error al generar SQL desde Ollama");
+                throw new Exception($"Error al comunicarse con Ollama: {ex.Message}", ex);
+            }
+        }
+
+        private async Task<string> TryGenerateEndpoint(string prompt)
+        {
+            try
+            {
+                _logger.LogInformation($"📡 Intentando endpoint: {_ollamaUrl}/api/generate");
+
+                var request = new
+                {
+                    model = _model,
+                    prompt = prompt,
+                    stream = false,
+                    options = new
+                    {
+                        temperature = 0.3,
+                        top_p = 0.8,
+                        num_predict = 512
+                    }
+                };
+
+                var jsonRequest = JsonSerializer.Serialize(request);
+                var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync("/api/generate", content);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning($"⚠️ /api/generate respondió con: {response.StatusCode}");
+                    return string.Empty;
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var jsonResponse = JsonDocument.Parse(responseContent);
+                
+                if (jsonResponse.RootElement.TryGetProperty("response", out JsonElement responseElement))
+                {
+                    var result = responseElement.GetString() ?? string.Empty;
+                    _logger.LogInformation($"✅ Respuesta recibida de /api/generate");
+                    return result;
+                }
+
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Error con /api/generate, intentando método alternativo...");
+                return string.Empty;
+            }
+        }
+
+        private async Task<string> TryChatEndpoint(string prompt)
+        {
+            try
+            {
+                _logger.LogInformation($"📡 Intentando endpoint: {_ollamaUrl}/api/chat");
+
+                var request = new
+                {
+                    model = _model,
+                    messages = new[]
+                    {
+                        new
+                        {
+                            role = "user",
+                            content = prompt
+                        }
+                    },
+                    stream = false,
+                    options = new
+                    {
+                        temperature = 0.3,
+                        top_p = 0.8,
+                        num_predict = 512
+                    }
+                };
+
+                var jsonRequest = JsonSerializer.Serialize(request);
+                var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync("/api/chat", content);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError($"❌ /api/chat respondió con {response.StatusCode}: {errorContent}");
+                    
+                    throw new Exception(
+                        $"No se pudo conectar con Ollama.\n\n" +
+                        $"Endpoints probados:\n" +
+                        $"- /api/generate: No disponible\n" +
+                        $"- /api/chat: {response.StatusCode}\n\n" +
+                        $"Soluciones:\n" +
+                        $"1. Verifica que Ollama esté ejecutándose: ollama serve\n" +
+                        $"2. Verifica que el modelo '{_model}' esté instalado: ollama pull {_model}\n" +
+                        $"3. Actualiza Ollama a la última versión\n" +
+                        $"4. Prueba manualmente: curl {_ollamaUrl}/api/tags");
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var jsonResponse = JsonDocument.Parse(responseContent);
+                
+                // En el endpoint /api/chat, la respuesta está en message.content
+                if (jsonResponse.RootElement.TryGetProperty("message", out JsonElement messageElement))
+                {
+                    if (messageElement.TryGetProperty("content", out JsonElement contentElement))
+                    {
+                        var result = contentElement.GetString() ?? string.Empty;
+                        _logger.LogInformation($"✅ Respuesta recibida de /api/chat");
+                        return result;
+                    }
+                }
+
+                return string.Empty;
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogError(httpEx, $"❌ Error de conexión HTTP: {httpEx.Message}");
+                throw new Exception(
+                    $"No se pudo conectar con Ollama en {_ollamaUrl}\n\n" +
+                    $"Verifica que Ollama esté ejecutándose:\n" +
+                    $"1. Ejecuta: ollama serve\n" +
+                    $"2. Verifica: curl {_ollamaUrl}/api/tags\n" +
+                    $"3. Instala el modelo: ollama pull {_model}", 
+                    httpEx);
+            }
+        }
+
+        public async Task<bool> IsAvailableAsync()
+        {
+            try
+            {
+                _logger.LogInformation($"🔍 Verificando disponibilidad de Ollama en: {_ollamaUrl}/api/tags");
+                
+                var response = await _httpClient.GetAsync("/api/tags");
+                
+                _logger.LogInformation($"📡 Respuesta de verificación: {response.StatusCode}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation($"✅ Ollama está disponible. Respuesta: {content}");
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning($"⚠️ Ollama respondió con: {response.StatusCode}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Ollama no está disponible en {_ollamaUrl}");
+                return false;
+            }
+        }
+
+        private string BuildPrompt(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            var sb = new StringBuilder();
+            
+            sb.AppendLine("You are a SQL expert. Generate ONLY a SQL SELECT query based on the user's natural language request.");
+            sb.AppendLine("IMPORTANT: Return ONLY the SQL query without any explanations, markdown, or additional text.");
+            sb.AppendLine();
+            sb.AppendLine($"Database Type: {schema.DatabaseType}");
+            sb.AppendLine($"Database Name: {schema.DatabaseName}");
+            sb.AppendLine();
+            sb.AppendLine("Database Schema:");
+            
+            foreach (var table in schema.Tables)
+            {
+                sb.AppendLine($"\nTable: {table.TableName}");
+                sb.AppendLine("Columns:");
+                
+                foreach (var column in table.Columns)
+                {
+                    var nullable = column.IsNullable ? "NULL" : "NOT NULL";
+                    var identity = column.IsIdentity ? " (IDENTITY)" : "";
+                    sb.AppendLine($"  - {column.ColumnName} ({column.DataType}{(column.MaxLength.HasValue ? $"({column.MaxLength})" : "")}) {nullable}{identity}");
+                }
+                
+                if (table.PrimaryKeys.Any())
+                {
+                    sb.AppendLine($"Primary Key: {string.Join(", ", table.PrimaryKeys)}");
+                }
+                
+                if (table.ForeignKeys.Any())
+                {
+                    sb.AppendLine("Foreign Keys:");
+                    foreach (var fk in table.ForeignKeys)
+                    {
+                        sb.AppendLine($"  - {fk.ColumnName} -> {fk.ReferencedTable}.{fk.ReferencedColumn}");
+                    }
+                }
+            }
+            
+            sb.AppendLine();
+            sb.AppendLine($"User Request: {naturalLanguageQuery}");
+            sb.AppendLine();
+            sb.AppendLine("Generate the SQL SELECT query:");
+            
+            return sb.ToString();
+        }
+
+        private string ExtractSqlFromResponse(string response)
+        {
+            // Limpiar markdown code blocks si existen
+            var sql = response.Trim();
+            
+            // Remover ```sql o ``` al inicio
+            if (sql.StartsWith("```sql", StringComparison.OrdinalIgnoreCase))
+            {
+                sql = sql.Substring(6).Trim();
+            }
+            else if (sql.StartsWith("```"))
+            {
+                sql = sql.Substring(3).Trim();
+            }
+            
+            // Remover ``` al final
+            if (sql.EndsWith("```"))
+            {
+                sql = sql.Substring(0, sql.Length - 3).Trim();
+            }
+            
+            // Tomar solo la primera sentencia SQL si hay múltiples líneas de explicación
+            var lines = sql.Split('\n');
+            var sqlLines = new List<string>();
+            
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedLine))
+                    continue;
+                    
+                // Si la línea parece ser SQL (empieza con SELECT, WITH, etc.)
+                if (trimmedLine.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+                    trimmedLine.StartsWith("WITH", StringComparison.OrdinalIgnoreCase) ||
+                    sqlLines.Any())
+                {
+                    sqlLines.Add(trimmedLine);
+                    
+                    // Si termina con ; es el final de la query
+                    if (trimmedLine.EndsWith(";"))
+                        break;
+                }
+            }
+            
+            return sqlLines.Any() ? string.Join(" ", sqlLines) : sql;
+        }
+    }
+}

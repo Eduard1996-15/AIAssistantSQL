@@ -1,0 +1,48 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class HomeController : Controller
+    {
+        private readonly ILogger<HomeController> _logger;
+        private readonly ISchemaLoaderService _schemaLoaderService;
+        private readonly IOllamaService _ollamaService;
+
+        public HomeController(
+            ILogger<HomeController> logger,
+            ISchemaLoaderService schemaLoaderService,
+            IOllamaService ollamaService)
+        {
+            _logger = logger;
+            _schemaLoaderService = schemaLoaderService;
+            _ollamaService = ollamaService;
+        }
+
+        public async Task<IActionResult> Index()
+        {
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+            var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
+
+            ViewBag.IsSchemaLoaded = currentSchema != null;
+            ViewBag.IsOllamaAvailable = isOllamaAvailable;
+            ViewBag.SchemaInfo = currentSchema != null
+                ? $"{currentSchema.DatabaseName} ({currentSchema.DatabaseType}) - {currentSchema.Tables.Count} tablas"
+                : "No hay esquema cargado";
+
+            return View();
+        }
+
+        public IActionResult Privacy()
+        {
+            return View();
+        }
+
+        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+        public IActionResult Error()
+        {
+            return View();
+        }
+    }
+}

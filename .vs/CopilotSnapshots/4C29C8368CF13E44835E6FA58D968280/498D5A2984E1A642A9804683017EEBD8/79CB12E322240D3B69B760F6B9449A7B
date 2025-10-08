@@ -1,0 +1,140 @@
+﻿@{
+    ViewData["Title"] = "Inicio";
+}
+
+<div class="text-center mb-5">
+    <h1 class="display-4">
+        <i class="bi bi-robot"></i> AI Assistant SQL
+    </h1>
+    <p class="lead">Consulta tus bases de datos usando lenguaje natural</p>
+</div>
+
+<div class="row g-4 mb-5">
+    <div class="col-md-4">
+        <div class="card h-100 card-hover">
+            <div class="card-body text-center">
+                <i class="bi bi-database-fill-gear text-primary" style="font-size: 3rem;"></i>
+                <h5 class="card-title mt-3">Estado del Sistema</h5>
+                <hr />
+                <div class="text-start">
+                    <p>
+                        <strong>Ollama:</strong>
+                        @if (ViewBag.IsOllamaAvailable)
+                        {
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> Conectado
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger">
+                                <i class="bi bi-x-circle"></i> Desconectado
+                            </span>
+                        }
+                    </p>
+                    <p>
+                        <strong>Esquema:</strong>
+                        @if (ViewBag.IsSchemaLoaded)
+                        {
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> Cargado
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-warning">
+                                <i class="bi bi-exclamation-triangle"></i> No cargado
+                            </span>
+                        }
+                    </p>
+                    @if (ViewBag.IsSchemaLoaded)
+                    {
+                        <p class="small text-muted mb-0">@ViewBag.SchemaInfo</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 card-hover">
+            <div class="card-body text-center">
+                <i class="bi bi-gear-fill text-info" style="font-size: 3rem;"></i>
+                <h5 class="card-title mt-3">Configuración</h5>
+                <p class="card-text">Carga el esquema de tu base de datos</p>
+                <a asp-controller="Database" asp-action="Index" class="btn btn-info">
+                    <i class="bi bi-database"></i> Configurar BD
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 card-hover">
+            <div class="card-body text-center">
+                <i class="bi bi-chat-left-text-fill text-success" style="font-size: 3rem;"></i>
+                <h5 class="card-title mt-3">Consultas</h5>
+                <p class="card-text">Haz preguntas en lenguaje natural</p>
+                <a asp-controller="Query" asp-action="Index" class="btn btn-success">
+                    <i class="bi bi-chat-dots"></i> Realizar Consulta
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Cómo usar AI Assistant SQL</h5>
+            </div>
+            <div class="card-body">
+                <ol class="mb-0">
+                    <li class="mb-3">
+                        <strong>Configurar Base de Datos:</strong>
+                        <ul>
+                            <li>Opción 1: Sube un archivo JSON con el esquema de tu BD</li>
+                            <li>Opción 2: Ingresa la cadena de conexión para cargar automáticamente</li>
+                            <li>Opción 3: Guarda el esquema actual para reutilizarlo</li>
+                        </ul>
+                    </li>
+                    <li class="mb-3">
+                        <strong>Asegúrate de que Ollama esté corriendo:</strong>
+                        <ul>
+                            <li>Ejecuta Ollama en tu equipo: <code>ollama serve</code></li>
+                            <li>Verifica que el modelo esté instalado: <code>ollama pull llama2</code></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Realiza Consultas:</strong>
+                        <ul>
+                            <li>Ve a la sección de Consultas</li>
+                            <li>Escribe tu pregunta en lenguaje natural</li>
+                            <li>La IA generará y ejecutará la consulta SQL automáticamente</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> Ejemplos de Consultas</h5>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li>"Muéstrame los últimos 10 usuarios registrados"</li>
+                    <li>"¿Cuántos productos hay en cada categoría?"</li>
+                    <li>"Lista las ventas del último mes ordenadas por monto"</li>
+                    <li>"Encuentra todos los clientes de Argentina"</li>
+                    <li>"¿Cuál es el producto más vendido?"</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

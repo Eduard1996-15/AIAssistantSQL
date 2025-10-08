@@ -1,0 +1,98 @@
+﻿using AIAssistantSQL.Interfaces;
+using System.Text.RegularExpressions;
+
+namespace AIAssistantSQL.Services
+{
+    /// <summary>
+    /// Servicio para validar consultas SQL
+    /// </summary>
+    public class SqlValidatorService : ISqlValidatorService
+    {
+        private readonly ILogger<SqlValidatorService> _logger;
+        
+        // Palabras clave peligrosas que no deben estar en una consulta SELECT
+        private static readonly string[] DangerousKeywords = new[]
+        {
+            "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", 
+            "TRUNCATE", "EXEC", "EXECUTE", "sp_", "xp_", "MERGE",
+            "GRANT", "REVOKE", "DENY", "BACKUP", "RESTORE"
+        };
+
+        public SqlValidatorService(ILogger<SqlValidatorService> logger)
+        {
+            _logger = logger;
+        }
+
+        public bool IsValidSelectQuery(string sql)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sql))
+                {
+                    _logger.LogWarning("SQL vacío o nulo");
+                    return false;
+                }
+
+                // Limpiar el SQL
+                var cleanedSql = CleanSqlQuery(sql);
+
+                // Verificar que empiece con SELECT o WITH (para CTEs)
+                if (!Regex.IsMatch(cleanedSql, @"^\s*(SELECT|WITH)\s+", RegexOptions.IgnoreCase))
+                {
+                    _logger.LogWarning("La consulta no empieza con SELECT o WITH");
+                    return false;
+                }
+
+                // Verificar que no contenga palabras clave peligrosas
+                foreach (var keyword in DangerousKeywords)
+                {
+                    // Usar word boundary para evitar falsos positivos
+                    var pattern = $@"\b{keyword}\b";
+                    if (Regex.IsMatch(cleanedSql, pattern, RegexOptions.IgnoreCase))
+                    {
+                        _logger.LogWarning($"La consulta contiene la palabra clave peligrosa: {keyword}");
+                        return false;
+                    }
+                }
+
+                // Verificar que no contenga comentarios maliciosos (-- o /* */)
+                // Permitir comentarios simples pero bloquear múltiples líneas sospechosas
+                if (Regex.IsMatch(cleanedSql, @"--.*?(DROP|DELETE|INSERT|UPDATE)", RegexOptions.IgnoreCase))
+                {
+                    _logger.LogWarning("Comentario sospechoso detectado");
+                    return false;
+                }
+
+                // Verificar que no intente hacer inyección SQL con UNION
+                // (permitir UNION legítimo pero bloquear patrones sospechosos)
+                if (Regex.IsMatch(cleanedSql, @"UNION\s+(ALL\s+)?SELECT.*?(FROM\s+information_schema|FROM\s+sys\.)", RegexOptions.IgnoreCase))
+                {
+                    _logger.LogWarning("Intento de inyección SQL con UNION detectado");
+                    return false;
+                }
+
+                _logger.LogInformation("Consulta SQL validada correctamente");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al validar SQL");
+                return false;
+            }
+        }
+
+        public string CleanSqlQuery(string sql)
+        {
+            if (string.IsNullOrWhiteSpace(sql))
+                return string.Empty;
+
+            // Remover espacios en blanco excesivos
+            var cleaned = Regex.Replace(sql, @"\s+", " ");
+
+            // Remover punto y coma al final si existe
+            cleaned = cleaned.TrimEnd(';').Trim();
+
+            return cleaned;
+        }
+    }
+}

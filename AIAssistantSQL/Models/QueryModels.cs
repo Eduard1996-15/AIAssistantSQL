@@ -1,0 +1,80 @@
+namespace AIAssistantSQL.Models
+{
+    /// <summary>
+    /// Modelo para la solicitud de consulta en lenguaje natural
+    /// </summary>
+    public class QueryRequest
+    {
+        public string NaturalLanguageQuery { get; set; } = string.Empty;
+        public string? DatabaseName { get; set; }
+    }
+
+    /// <summary>
+    /// Respuesta de una consulta SQL
+    /// </summary>
+    public class QueryResponse
+    {
+        public bool Success { get; set; }
+        public string? ErrorMessage { get; set; }
+        public string? GeneratedSQL { get; set; }
+        public List<Dictionary<string, object>>? Results { get; set; }
+        public int RowCount { get; set; }
+        public TimeSpan ExecutionTime { get; set; }
+        
+        // NUEVO: Interpretación en lenguaje natural de los resultados
+        public string? NaturalLanguageResponse { get; set; }
+    }
+
+    /// <summary>
+    /// Historial de consultas con conversación
+    /// </summary>
+    public class QueryHistory
+    {
+        public DateTime Timestamp { get; set; }
+        public string NaturalLanguageQuery { get; set; } = string.Empty;
+        public string GeneratedSQL { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        
+        // NUEVO: Respuesta de la IA en lenguaje natural
+        public string? NaturalLanguageResponse { get; set; }
+        
+        // NUEVO: ID de conversación para agrupar mensajes relacionados
+        public Guid ConversationId { get; set; }
+    }
+
+    /// <summary>
+    /// Conversación completa con la IA
+    /// </summary>
+    public class Conversation
+    {
+        public Guid Id { get; set; }
+        public DateTime StartedAt { get; set; }
+        public DateTime LastMessageAt { get; set; }
+        public List<ConversationMessage> Messages { get; set; } = new();
+        public string DatabaseName { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Mensaje individual en una conversación
+    /// </summary>
+    public class ConversationMessage
+    {
+        public DateTime Timestamp { get; set; }
+        public string UserQuestion { get; set; } = string.Empty;
+        public string GeneratedSQL { get; set; } = string.Empty;
+        public string AIResponse { get; set; } = string.Empty;
+        public bool Success { get; set; }
+    }
+
+    /// <summary>
+    /// Modelo de IA disponible en Ollama
+    /// </summary>
+    public class OllamaModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Size { get; set; } = string.Empty;
+        public DateTime ModifiedAt { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public bool IsRecommendedForSQL { get; set; }
+    }
+}

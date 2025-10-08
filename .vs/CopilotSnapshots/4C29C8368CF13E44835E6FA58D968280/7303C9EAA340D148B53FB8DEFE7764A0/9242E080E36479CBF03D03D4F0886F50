@@ -1,0 +1,132 @@
+﻿# ?? Inicio Rápido - AI Assistant SQL
+
+## Pasos para ejecutar el proyecto
+
+### 1. Instalar y configurar Ollama
+
+```bash
+# Descargar Ollama desde: https://ollama.ai
+
+# Descargar un modelo
+ollama pull llama2
+
+# Iniciar Ollama
+ollama serve
+```
+
+**Ollama debe estar corriendo en:** `http://localhost:11434`
+
+### 2. Ejecutar la aplicación
+
+```bash
+cd AIAssistantSQL
+dotnet run
+```
+
+La aplicación estará disponible en: **https://localhost:5001**
+
+### 3. Configurar Base de Datos
+
+1. Ir a **Configuración BD**
+2. Elegir opción:
+   - **Archivo JSON**: Usa el ejemplo en `wwwroot/uploads/ejemplo_schema.json`
+   - **Cadena de Conexión**: Conecta directamente a tu BD
+
+#### Ejemplos de Cadenas de Conexión:
+
+**SQL Server:**
+```
+Server=localhost;Database=MiDB;User Id=sa;Password=MiPassword123;TrustServerCertificate=True
+```
+
+**PostgreSQL:**
+```
+Host=localhost;Database=MiDB;Username=postgres;Password=MiPassword123
+```
+
+### 4. Realizar Consultas
+
+1. Ir a **Consultas**
+2. Escribir en lenguaje natural:
+   - "Muéstrame todos los usuarios"
+   - "¿Cuántos productos hay?"
+   - "Lista las ventas del último mes"
+
+---
+
+## Troubleshooting
+
+### ? Error: "Ollama no está disponible"
+**Solución:** Asegúrate de que Ollama esté corriendo:
+```bash
+ollama serve
+```
+
+### ? Error: "No hay esquema cargado"
+**Solución:** Ve a "Configuración BD" y carga el esquema primero
+
+### ? El SQL generado es incorrecto
+**Soluciones:**
+- Usa un modelo especializado: `ollama pull codellama`
+- Sé más específico en tu pregunta
+- Verifica que el esquema esté completo
+
+### ? Error de conexión a BD
+**Solución:** Verifica:
+- Cadena de conexión correcta
+- Servidor de BD corriendo
+- Permisos de lectura en la BD
+
+---
+
+## Ejemplos de Uso
+
+### Usando el esquema de ejemplo (EjemploTienda)
+
+```
+"Muéstrame los últimos 10 productos"
+"¿Cuántos clientes hay registrados?"
+"Lista las ventas totales por cliente"
+"Productos con stock menor a 10"
+"Clientes registrados en enero"
+```
+
+---
+
+## Modelos de Ollama Recomendados
+
+```bash
+# Modelo general (más rápido)
+ollama pull llama2
+
+# Modelo especializado en código (mejor para SQL)
+ollama pull codellama
+
+# Modelo más avanzado
+ollama pull mistral
+```
+
+Cambia el modelo en `appsettings.json`:
+```json
+{
+  "Ollama": {
+    "Model": "codellama"
+  }
+}
+```
+
+---
+
+## Reutilizar en Otros Proyectos
+
+### Opción 1: Copiar el código
+Copia las carpetas: `Models`, `Services`, `Repositories`, `Interfaces`
+
+### Opción 2: Usar esquemas guardados
+1. Carga el esquema de tu BD una vez
+2. Guárdalo como JSON
+3. Usa ese archivo en otros proyectos
+
+---
+
+¡Listo para consultar bases de datos con lenguaje natural! ??

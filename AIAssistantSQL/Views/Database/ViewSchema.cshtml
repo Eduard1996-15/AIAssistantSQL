@@ -1,0 +1,149 @@
+@model DatabaseSchema
+@{
+    ViewData["Title"] = "Esquema de Base de Datos";
+}
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1 class="mb-3">
+            <i class="bi bi-diagram-3"></i> Esquema de Base de Datos
+        </h1>
+        <div class="alert alert-info">
+            <p class="mb-1"><strong>Base de Datos:</strong> @Model.DatabaseName</p>
+            <p class="mb-1"><strong>Tipo:</strong> @Model.DatabaseType</p>
+            <p class="mb-0"><strong>Total de Tablas:</strong> @Model.Tables.Count</p>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="accordion" id="tablesAccordion">
+            @for (int i = 0; i < Model.Tables.Count; i++)
+            {
+                var table = Model.Tables[i];
+                var collapseId = $"collapse{i}";
+                var headingId = $"heading{i}";
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="@headingId">
+                        <button class="accordion-button @(i != 0 ? "collapsed" : "")" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="@(i == 0 ? "true" : "false")" aria-controls="@collapseId">
+                            <i class="bi bi-table me-2"></i>
+                            <strong>@table.TableName</strong>
+                            <span class="badge bg-primary ms-2">@table.Columns.Count columnas</span>
+                            @if (table.PrimaryKeys.Any())
+                            {
+                                <span class="badge bg-success ms-2">
+                                    <i class="bi bi-key"></i> PK
+                                </span>
+                            }
+                            @if (table.ForeignKeys.Any())
+                            {
+                                <span class="badge bg-warning ms-2">
+                                    <i class="bi bi-link-45deg"></i> @table.ForeignKeys.Count FKs
+                                </span>
+                            }
+                        </button>
+                    </h2>
+                    <div id="@collapseId" class="accordion-collapse collapse @(i == 0 ? "show" : "")" aria-labelledby="@headingId" data-bs-parent="#tablesAccordion">
+                        <div class="accordion-body">
+                            <!-- Columnas -->
+                            <h6 class="mb-3"><i class="bi bi-list-columns"></i> Columnas:</h6>
+                            <div class="table-responsive mb-3">
+                                <table class="table table-sm table-striped">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Nombre</th>
+                                            <th>Tipo de Dato</th>
+                                            <th>Nullable</th>
+                                            <th>Identity</th>
+                                            <th>Clave</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var column in table.Columns)
+                                        {
+                                            var isPK = table.PrimaryKeys.Contains(column.ColumnName);
+                                            var isFK = table.ForeignKeys.Any(fk => fk.ColumnName == column.ColumnName);
+                                            
+                                            <tr>
+                                                <td>
+                                                    <strong>@column.ColumnName</strong>
+                                                </td>
+                                                <td>
+                                                    <code>@column.DataType@(column.MaxLength.HasValue ? $"({column.MaxLength})" : "")</code>
+                                                </td>
+                                                <td>
+                                                    @if (column.IsNullable)
+                                                    {
+                                                        <span class="badge bg-warning">NULL</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-secondary">NOT NULL</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (column.IsIdentity)
+                                                    {
+                                                        <span class="badge bg-info">IDENTITY</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">-</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (isPK)
+                                                    {
+                                                        <span class="badge bg-success">
+                                                            <i class="bi bi-key"></i> PK
+                                                        </span>
+                                                    }
+                                                    @if (isFK)
+                                                    {
+                                                        <span class="badge bg-warning">
+                                                            <i class="bi bi-link-45deg"></i> FK
+                                                        </span>
+                                                    }
+                                                    @if (!isPK && !isFK)
+                                                    {
+                                                        <span class="text-muted">-</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Foreign Keys -->
+                            @if (table.ForeignKeys.Any())
+                            {
+                                <h6 class="mb-2"><i class="bi bi-link-45deg"></i> Claves Foráneas:</h6>
+                                <ul class="list-group mb-0">
+                                    @foreach (var fk in table.ForeignKeys)
+                                    {
+                                        <li class="list-group-item">
+                                            <code>@fk.ColumnName</code> 
+                                            <i class="bi bi-arrow-right"></i> 
+                                            <code>@fk.ReferencedTable.@fk.ReferencedColumn</code>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <a asp-controller="Database" asp-action="Index" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Volver a Configuración
+        </a>
+    </div>
+</div>

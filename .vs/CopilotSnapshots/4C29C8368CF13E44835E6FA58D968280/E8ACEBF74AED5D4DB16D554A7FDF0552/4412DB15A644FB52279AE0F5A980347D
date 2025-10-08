@@ -1,0 +1,245 @@
+﻿@model DatabaseConfigViewModel
+@{
+    ViewData["Title"] = "Configuración de Base de Datos";
+}
+
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">
+            <i class="bi bi-database-gear"></i> Configuración de Base de Datos
+        </h1>
+    </div>
+</div>
+
+@if (Model.IsSchemaLoaded && Model.IsConnected)
+{
+    <div class="alert alert-success">
+        <h5><i class="bi bi-check-circle-fill"></i> Todo Listo para Consultar</h5>
+        <p class="mb-1"><strong>Base de Datos:</strong> @Model.LoadedDatabaseName</p>
+        <p class="mb-1"><strong>Tipo:</strong> @Model.DatabaseType</p>
+        <p class="mb-1"><strong>Tablas Cargadas:</strong> @Model.TableCount</p>
+        <p class="mb-1"><strong>Estado:</strong> <span class="badge bg-success">Conectado ✓</span></p>
+        <p class="mb-0"><strong>Cargado:</strong> @Model.LoadedAt?.ToString("dd/MM/yyyy HH:mm:ss")</p>
+        <hr/>
+        <div class="d-flex gap-2">
+            <a asp-controller="Query" asp-action="Index" class="btn btn-success">
+                <i class="bi bi-chat-dots"></i> Ir a Consultas
+            </a>
+            <a asp-controller="Database" asp-action="ViewSchema" class="btn btn-outline-success">
+                <i class="bi bi-eye"></i> Ver Esquema
+            </a>
+            <form asp-controller="Database" asp-action="Disconnect" method="post" class="d-inline">
+                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('¿Desea desconectar?')">
+                    <i class="bi bi-plug"></i> Desconectar
+                </button>
+            </form>
+        </div>
+    </div>
+}
+else if (Model.IsSchemaLoaded && !Model.IsConnected)
+{
+    <div class="alert alert-warning">
+        <h5><i class="bi bi-exclamation-triangle"></i> Esquema Cargado - Falta Configurar Conexión</h5>
+        <p class="mb-1"><strong>Base de Datos:</strong> @Model.LoadedDatabaseName</p>
+        <p class="mb-1"><strong>Tablas:</strong> @Model.TableCount</p>
+        <p class="mb-3"><strong>Estado:</strong> <span class="badge bg-warning">Sin Conexión</span></p>
+        <p class="mb-0">Tienes el esquema cargado pero necesitas configurar la cadena de conexión para ejecutar consultas.</p>
+        <hr/>
+        <a href="#connectionOnly" class="btn btn-warning">
+            <i class="bi bi-plug"></i> Configurar Conexión Ahora
+        </a>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> Para comenzar, elige una de las opciones abajo para cargar tu base de datos.
+    </div>
+}
+
+<div class="row g-4 mb-4">
+    <!-- OPCIÓN RECOMENDADA: Conectar y Cargar Todo -->
+    <div class="col-md-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-star-fill"></i> OPCIÓN RECOMENDADA: Conectar y Cargar Esquema Automáticamente
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    <strong>Esta es la forma más fácil:</strong> Ingresa tu cadena de conexión y automáticamente se extraerá toda la estructura de tu base de datos.
+                </p>
+                
+                <form asp-controller="Database" asp-action="ConnectAndLoadSchema" method="post">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label for="databaseTypeMain" class="form-label">Tipo de Base de Datos</label>
+                            <select class="form-select" id="databaseTypeMain" name="databaseType" required>
+                                <option value="0" selected>SQL Server</option>
+                                <option value="1">PostgreSQL</option>
+                            </select>
+                        </div>
+                        <div class="col-md-9">
+                            <label for="connectionStringMain" class="form-label">Cadena de Conexión</label>
+                            <input type="text" class="form-control" id="connectionStringMain" name="connectionString" required
+                                   placeholder="Server=MISERVIDOR\SQLEXPRESS;Database=MiBaseDatos;Trusted_Connection=True;TrustServerCertificate=True;" />
+                            <div class="form-text">
+                                <strong>⚠️ Importante:</strong> Usa una sola barra invertida <code>\</code> para el nombre del servidor (ej: <code>SERVIDOR\INSTANCIA</code>)
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3 mb-3">
+                        <strong>💡 Ejemplo para SQL Server (Trusted Connection):</strong><br/>
+                        <code>Server=SKILAINE3\SQLEXPRESS;Database=BD_SCU;Trusted_Connection=True;TrustServerCertificate=True;Integrated Security=True;</code>
+                        <hr/>
+                        <strong>💡 Ejemplo para SQL Server (Usuario/Password):</strong><br/>
+                        <code>Server=localhost\SQLEXPRESS;Database=MiDB;User Id=sa;Password=MiPassword123;TrustServerCertificate=True;</code>
+                        <hr/>
+                        <strong>💡 Ejemplo para PostgreSQL:</strong><br/>
+                        <code>Host=localhost;Database=MiDB;Username=postgres;Password=MiPassword123;</code>
+                        <hr/>
+                        <div class="alert alert-warning mb-0 mt-2">
+                            <strong>📌 Nota sobre barras invertidas:</strong><br/>
+                            Si copias y pegas desde otro lugar, asegúrate de usar una sola barra <code>\</code> (no doble <code>\\</code>).<br/>
+                            <strong>✅ Correcto:</strong> <code>SERVIDOR\INSTANCIA</code><br/>
+                            <strong>❌ Incorrecto:</strong> <code>SERVIDOR\\INSTANCIA</code>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-plug-fill"></i> Conectar y Extraer Esquema Completo
+                    </button>
+                    <small class="text-muted d-block mt-2">
+                        Se extraerán automáticamente todas las tablas, columnas, claves primarias y foráneas
+                    </small>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<hr class="my-4"/>
+<h4 class="mb-3">Otras Opciones</h4>
+
+<div class="row g-4">
+    <!-- Opción 1: Cargar desde archivo -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Cargar Esquema desde Archivo</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">Si ya guardaste el esquema anteriormente, puedes subirlo aquí.</p>
+                
+                <form asp-controller="Database" asp-action="LoadFromFile" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="schemaFile" class="form-label">Archivo JSON de Esquema</label>
+                        <input type="file" class="form-control" id="schemaFile" name="schemaFile" accept=".json" required>
+                        <div class="form-text">Archivo .json con la estructura de la BD</div>
+                    </div>
+                    <button type="submit" class="btn btn-secondary">
+                        <i class="bi bi-upload"></i> Cargar Esquema
+                    </button>
+                </form>
+
+                @if (!Model.IsConnected && Model.IsSchemaLoaded)
+                {
+                    <hr id="connectionOnly"/>
+                    <h6 class="mt-3">Configurar Conexión para este Esquema:</h6>
+                    <form asp-controller="Database" asp-action="SetConnectionString" method="post">
+                        <div class="mb-2">
+                            <select class="form-select form-select-sm" name="databaseType" required>
+                                <option value="0">SQL Server</option>
+                                <option value="1">PostgreSQL</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <input type="text" class="form-control form-control-sm" name="connectionString" 
+                                   placeholder="Server=SERVIDOR\INSTANCIA;Database=..." required/>
+                            <small class="text-muted">Usa una sola barra \ para el servidor</small>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-warning">
+                            <i class="bi bi-plug"></i> Configurar Conexión
+                        </button>
+                    </form>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Opción 2: Guardar esquema actual -->
+    @if (Model.IsSchemaLoaded)
+    {
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-floppy"></i> Guardar Esquema Actual</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Guarda el esquema actual en un archivo JSON para reutilizarlo después.</p>
+                    
+                    <form asp-controller="Database" asp-action="SaveSchemaToFile" method="post">
+                        <div class="mb-3">
+                            <label for="fileName" class="form-label">Nombre del Archivo</label>
+                            <input type="text" class="form-control" id="fileName" name="fileName" 
+                                   value="@($"{Model.LoadedDatabaseName}_schema.json")" required>
+                            <div class="form-text">Se guardará en wwwroot/uploads/</div>
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-floppy"></i> Guardar Esquema
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> ¿Cómo funciona?</h5>
+            </div>
+            <div class="card-body">
+                <h6>Flujo Recomendado:</h6>
+                <ol>
+                    <li>
+                        <strong>Usa la Opción Recomendada</strong> (arriba) para conectar directamente:
+                        <ul>
+                            <li>Ingresa tu cadena de conexión (ejemplo: tu BD_SCU)</li>
+                            <li>El sistema extraerá automáticamente todas las tablas y su estructura</li>
+                            <li>Quedará todo listo para hacer consultas</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>(Opcional) Guarda el esquema</strong> en un archivo JSON para reutilizarlo en otros proyectos sin volver a conectarte
+                    </li>
+                    <li>
+                        <strong>Ve a "Consultas"</strong> y pregunta en lenguaje natural (ejemplo: "muéstrame todos los usuarios activos")
+                    </li>
+                </ol>
+
+                <hr/>
+
+                <h6>Tipos de Cadena de Conexión:</h6>
+                <ul class="mb-0">
+                    <li>
+                        <strong>Trusted Connection (Windows Auth):</strong>
+                        <code>Server=MIPC\SQLEXPRESS;Database=MiDB;Trusted_Connection=True;TrustServerCertificate=True;</code>
+                    </li>
+                    <li>
+                        <strong>SQL Server Auth:</strong>
+                        <code>Server=localhost\SQLEXPRESS;Database=MiDB;User Id=sa;Password=****;TrustServerCertificate=True;</code>
+                    </li>
+                    <li>
+                        <strong>PostgreSQL:</strong>
+                        <code>Host=localhost;Database=MiDB;Username=postgres;Password=****;</code>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

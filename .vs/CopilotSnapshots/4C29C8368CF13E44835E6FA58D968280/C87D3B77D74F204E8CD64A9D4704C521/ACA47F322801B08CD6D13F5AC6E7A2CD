@@ -1,0 +1,316 @@
+﻿@{
+    ViewData["Title"] = "Configuración del Sistema";
+    var models = ViewBag.AvailableModels as List<AIAssistantSQL.Models.OllamaModel>;
+    var currentModel = ViewBag.CurrentModel as string;
+    var providers = ViewBag.Providers as List<AIAssistantSQL.Services.AIProviderInfo>;
+    var currentProvider = ViewBag.CurrentProvider as string;
+}
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1 class="mb-3">
+            <i class="bi bi-gear-fill"></i> Configuración del Sistema
+        </h1>
+        <p class="lead">Configura el proveedor de IA y modelos del sistema</p>
+    </div>
+</div>
+
+<!-- Selector de Proveedor de IA -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-stars"></i> Proveedor de IA</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Proveedor Actual:</strong> <span class="badge bg-success fs-6">@currentProvider</span>
+                </div>
+
+                @if (providers != null && providers.Any())
+                {
+                    <h6 class="mt-4 mb-3">Proveedores Disponibles:</h6>
+                    <p class="text-muted">
+                        Selecciona el proveedor de IA que deseas usar. Cada uno tiene sus ventajas.
+                    </p>
+
+                    <div class="row">
+                        @foreach (var provider in providers)
+                        {
+                            var isActive = provider.Name == currentProvider;
+                            var cardClass = isActive ? "border-primary" : "";
+                            
+                            <div class="col-md-4 mb-3">
+                                <div class="card @cardClass h-100">
+                                    <div class="card-body">
+                                        <div class="text-center mb-3">
+                                            <div style="font-size: 3rem;">@provider.Icon</div>
+                                            <h5 class="card-title mt-2">@provider.DisplayName</h5>
+                                        </div>
+                                        
+                                        <p class="card-text">@provider.Description</p>
+                                        
+                                        @if (isActive)
+                                        {
+                                            <button class="btn btn-success w-100" disabled>
+                                                <i class="bi bi-check-circle-fill"></i> Activo
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <form asp-controller="Settings" asp-action="ChangeProvider" method="post">
+                                                <input type="hidden" name="providerName" value="@provider.Name" />
+                                                <button type="submit" class="btn btn-primary w-100">
+                                                    <i class="bi bi-arrow-right-circle"></i> Usar @provider.DisplayName
+                                                </button>
+                                            </form>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="alert alert-warning mt-3">
+                        <h6><i class="bi bi-lightbulb"></i> Comparación Rápida:</h6>
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Proveedor</th>
+                                    <th>Velocidad</th>
+                                    <th>Precisión</th>
+                                    <th>Privacidad</th>
+                                    <th>Costo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Ollama</strong></td>
+                                    <td>???</td>
+                                    <td>????</td>
+                                    <td>?????</td>
+                                    <td>Gratis</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Google AI</strong></td>
+                                    <td>?????</td>
+                                    <td>?????</td>
+                                    <td>???</td>
+                                    <td>Gratis*</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>DeepSeek</strong></td>
+                                    <td>????</td>
+                                    <td>?????</td>
+                                    <td>???</td>
+                                    <td>Gratis*</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <small class="text-muted">* Con límites de uso</small>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        No se encontraron proveedores configurados.
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modelos de Ollama (solo si Ollama está activo) -->
+@if (currentProvider == "Ollama")
+{
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="bi bi-robot"></i> Modelos de Ollama</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Modelo Actual:</strong> <span class="badge bg-success fs-6">@currentModel</span>
+                    </div>
+
+                    @if (models != null && models.Any())
+                    {
+                        <h6 class="mt-4 mb-3">Modelos Disponibles:</h6>
+                        <p class="text-muted">
+                            Selecciona el modelo que deseas usar. Los modelos especializados en código (como CodeLlama) generan mejores consultas SQL.
+                        </p>
+
+                        <div class="list-group">
+                            @foreach (var aiModel in models)
+                            {
+                                var isActive = aiModel.Name == currentModel;
+                                var cardClass = isActive ? "list-group-item-primary" : "";
+                                
+                                <div class="list-group-item @cardClass">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-center">
+                                                @if (aiModel.IsRecommendedForSQL)
+                                                {
+                                                    <span class="badge bg-success me-2">
+                                                        <i class="bi bi-star-fill"></i> Recomendado para SQL
+                                                    </span>
+                                                }
+                                                @if (isActive)
+                                                {
+                                                    <span class="badge bg-primary me-2">
+                                                        <i class="bi bi-check-circle-fill"></i> En Uso
+                                                    </span>
+                                                }
+                                            </div>
+                                            <h6 class="mb-1 mt-2">
+                                                <i class="bi bi-cpu"></i> @aiModel.Name
+                                            </h6>
+                                            <p class="mb-1 text-muted">@aiModel.Description</p>
+                                            <small class="text-muted">
+                                                <i class="bi bi-hdd"></i> Tamaño: @aiModel.Size | 
+                                                <i class="bi bi-calendar"></i> Actualizado: @aiModel.ModifiedAt.ToString("dd/MM/yyyy")
+                                            </small>
+                                        </div>
+                                        <div class="col-md-6 text-end">
+                                            @if (!isActive)
+                                            {
+                                                <form asp-controller="Settings" asp-action="ChangeModel" method="post" class="d-inline">
+                                                    <input type="hidden" name="modelName" value="@aiModel.Name" />
+                                                    <button type="submit" class="btn btn-primary">
+                                                        <i class="bi bi-arrow-right-circle"></i> Usar este Modelo
+                                                    </button>
+                                                </form>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn btn-success" disabled>
+                                                    <i class="bi bi-check-circle-fill"></i> Modelo Activo
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="alert alert-warning mt-4">
+                            <h6><i class="bi bi-lightbulb"></i> Consejos:</h6>
+                            <ul class="mb-0">
+                                <li><strong>CodeLlama:</strong> Mejor para generar SQL complejo y preciso</li>
+                                <li><strong>Llama 3.2:</strong> Rápido y eficiente para consultas simples</li>
+                                <li><strong>Mistral:</strong> Buen balance entre velocidad y precisión</li>
+                                <li>Los modelos más grandes (> 10GB) son más precisos pero más lentos</li>
+                            </ul>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-danger">
+                            <h5><i class="bi bi-exclamation-triangle"></i> No hay modelos disponibles</h5>
+                            <p>No se encontraron modelos instalados en Ollama.</p>
+                            <hr>
+                            <h6>Soluciones:</h6>
+                            <ol>
+                                <li>
+                                    <strong>Verifica que Ollama esté ejecutándose:</strong><br>
+                                    <code>ollama serve</code>
+                                </li>
+                                <li>
+                                    <strong>Instala un modelo:</strong><br>
+                                    <code>ollama pull codellama</code> (recomendado para SQL, 3.8GB)<br>
+                                    <code>ollama pull llama3.2</code> (rápido, 2GB)<br>
+                                    <code>ollama pull mistral</code> (buen balance, 4GB)
+                                </li>
+                                <li>
+                                    <strong>Verifica los modelos instalados:</strong><br>
+                                    <code>ollama list</code>
+                                </li>
+                            </ol>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Información del Sistema -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Información del Sistema</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="bi bi-server"></i> Configuración Actual</h6>
+                        <ul>
+                            <li><strong>Proveedor:</strong> @currentProvider</li>
+                            <li><strong>Modelo:</strong> @currentModel</li>
+                            <li><strong>Proveedores Disponibles:</strong> @(providers?.Count ?? 0)</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="bi bi-code-square"></i> Aplicación</h6>
+                        <ul>
+                            <li><strong>Framework:</strong> .NET 8 (C# 12)</li>
+                            <li><strong>Arquitectura:</strong> ASP.NET Core MVC</li>
+                            <li><strong>Base de Datos:</strong> SQL Server / PostgreSQL</li>
+                        </ul>
+                    </div>
+                </div>
+
+                @if (currentProvider == "Ollama")
+                {
+                    <hr>
+                    <h6><i class="bi bi-terminal"></i> Comandos útiles de Ollama:</h6>
+                    <div class="code-block">
+                        # Ver modelos instalados<br>
+                        ollama list<br>
+                        <br>
+                        # Instalar un modelo<br>
+                        ollama pull codellama<br>
+                        ollama pull mistral<br>
+                        <br>
+                        # Eliminar un modelo<br>
+                        ollama rm llama2<br>
+                        <br>
+                        # Iniciar Ollama<br>
+                        ollama serve
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Confirmar antes de cambiar modelo
+            $('form[action*="ChangeModel"]').submit(function(e) {
+                var modelName = $(this).find('input[name="modelName"]').val();
+                if (!confirm('¿Cambiar a ' + modelName + '?\n\nLas siguientes consultas usarán este modelo.')) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+
+            // Confirmar antes de cambiar proveedor
+            $('form[action*="ChangeProvider"]').submit(function(e) {
+                var providerName = $(this).find('input[name="providerName"]').val();
+                if (!confirm('¿Cambiar a ' + providerName + '?\n\nTodas las consultas usarán este proveedor de IA.')) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+        });
+    </script>
+}

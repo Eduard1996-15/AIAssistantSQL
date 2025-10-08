@@ -1,0 +1,44 @@
+using AIAssistantSQL.Models;
+
+namespace AIAssistantSQL.Interfaces
+{
+    /// <summary>
+    /// Interfaz para servicios de Ollama
+    /// </summary>
+    public interface IOllamaService
+    {
+        /// <summary>
+        /// Genera una consulta SQL desde lenguaje natural
+        /// </summary>
+        Task<string> GenerateSQLFromNaturalLanguageAsync(string naturalLanguageQuery, DatabaseSchema schema);
+
+        /// <summary>
+        /// Interpreta los resultados de una consulta SQL y genera una respuesta en lenguaje natural
+        /// </summary>
+        Task<string> InterpretQueryResultsAsync(
+            string originalQuestion,
+            string executedSql,
+            List<Dictionary<string, object>> results,
+            List<string> conversationHistory = null);
+
+        /// <summary>
+        /// Verifica si Ollama está disponible
+        /// </summary>
+        Task<bool> IsAvailableAsync();
+
+        /// <summary>
+        /// Obtiene la lista de modelos disponibles en Ollama
+        /// </summary>
+        Task<List<OllamaModel>> GetAvailableModelsAsync();
+
+        /// <summary>
+        /// Obtiene el modelo actualmente en uso
+        /// </summary>
+        string GetCurrentModel();
+
+        /// <summary>
+        /// Cambia el modelo a usar
+        /// </summary>
+        void SetModel(string modelName);
+    }
+}

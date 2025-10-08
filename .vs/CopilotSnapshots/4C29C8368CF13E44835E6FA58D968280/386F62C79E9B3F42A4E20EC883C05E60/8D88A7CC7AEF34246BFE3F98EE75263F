@@ -1,0 +1,92 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Services;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class SettingsController : Controller
+    {
+        private readonly IOllamaService _ollamaService;
+        private readonly AIServiceFactory _aiServiceFactory;
+        private readonly ILogger<SettingsController> _logger;
+
+        public SettingsController(
+            IOllamaService ollamaService,
+            AIServiceFactory aiServiceFactory,
+            ILogger<SettingsController> logger)
+        {
+            _ollamaService = ollamaService;
+            _aiServiceFactory = aiServiceFactory;
+            _logger = logger;
+        }
+
+        public async Task<IActionResult> Index()
+        {
+            var models = await _ollamaService.GetAvailableModelsAsync();
+            var currentModel = _ollamaService.GetCurrentModel();
+            var providers = _aiServiceFactory.GetAvailableProviders();
+            var currentProvider = _aiServiceFactory.GetCurrentProvider();
+
+            ViewBag.AvailableModels = models;
+            ViewBag.CurrentModel = currentModel;
+            ViewBag.Providers = providers;
+            ViewBag.CurrentProvider = currentProvider;
+
+            return View();
+        }
+
+        [HttpPost]
+        public IActionResult ChangeModel(string modelName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(modelName))
+                {
+                    TempData["Error"] = "Por favor selecciona un modelo válido";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                _ollamaService.SetModel(modelName);
+                
+                TempData["Success"] = $"✅ Modelo cambiado exitosamente a: <strong>{modelName}</strong><br/>Las próximas consultas usarán este modelo.";
+                
+                _logger.LogInformation($"Usuario cambió el modelo a: {modelName}");
+
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cambiar modelo");
+                TempData["Error"] = $"Error al cambiar modelo: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        [HttpPost]
+        public IActionResult ChangeProvider(string providerName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(providerName))
+                {
+                    TempData["Error"] = "Por favor selecciona un proveedor válido";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                _aiServiceFactory.SetProvider(providerName);
+                
+                TempData["Success"] = $"✅ Proveedor cambiado exitosamente a: <strong>{providerName}</strong><br/>Todas las consultas usarán este proveedor de IA.";
+                
+                _logger.LogInformation($"Usuario cambió el proveedor a: {providerName}");
+
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cambiar proveedor");
+                TempData["Error"] = $"Error al cambiar proveedor: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+    }
+}

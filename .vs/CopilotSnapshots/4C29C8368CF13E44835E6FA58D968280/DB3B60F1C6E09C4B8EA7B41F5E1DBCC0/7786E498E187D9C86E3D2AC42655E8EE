@@ -1,0 +1,97 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Dapper;
+using Microsoft.Data.SqlClient;
+using Npgsql;
+using System.Data;
+
+namespace AIAssistantSQL.Repositories
+{
+    /// <summary>
+    /// Repositorio para ejecutar consultas en bases de datos
+    /// </summary>
+    public class QueryRepository : IQueryRepository
+    {
+        private readonly ILogger<QueryRepository> _logger;
+
+        public QueryRepository(ILogger<QueryRepository> logger)
+        {
+            _logger = logger;
+        }
+
+        public async Task<List<Dictionary<string, object?>>> ExecuteQueryAsync(string sql, string connectionString, DatabaseType databaseType)
+        {
+            try
+            {
+                _logger.LogInformation($"Ejecutando consulta en {databaseType}");
+
+                IDbConnection connection = databaseType switch
+                {
+                    DatabaseType.SqlServer => new SqlConnection(connectionString),
+                    DatabaseType.PostgreSQL => new NpgsqlConnection(connectionString),
+                    _ => throw new NotSupportedException($"Tipo de base de datos no soportado: {databaseType}")
+                };
+
+                using (connection)
+                {
+                    await connection.OpenAsync();
+
+                    var result = await connection.QueryAsync(sql);
+                    var resultList = new List<Dictionary<string, object?>>();
+
+                    foreach (var row in result)
+                    {
+                        var dict = new Dictionary<string, object?>();
+                        var rowDict = row as IDictionary<string, object>;
+
+                        if (rowDict != null)
+                        {
+                            foreach (var kvp in rowDict)
+                            {
+                                dict[kvp.Key] = kvp.Value;
+                            }
+                        }
+
+                        resultList.Add(dict);
+                    }
+
+                    _logger.LogInformation($"Consulta ejecutada exitosamente. Filas retornadas: {resultList.Count}");
+
+                    return resultList;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al ejecutar consulta");
+                throw;
+            }
+        }
+
+        public async Task<bool> TestConnectionAsync(string connectionString, DatabaseType databaseType)
+        {
+            try
+            {
+                _logger.LogInformation($"Probando conexión a {databaseType}");
+
+                IDbConnection connection = databaseType switch
+                {
+                    DatabaseType.SqlServer => new SqlConnection(connectionString),
+                    DatabaseType.PostgreSQL => new NpgsqlConnection(connectionString),
+                    _ => throw new NotSupportedException($"Tipo de base de datos no soportado: {databaseType}")
+                };
+
+                using (connection)
+                {
+                    await connection.OpenAsync();
+                    _logger.LogInformation("Conexión exitosa");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al probar conexión");
+                return false;
+            }
+        }
+    }
+}

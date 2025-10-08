@@ -1,0 +1,99 @@
+using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class HomeController : Controller
+    {
+        private readonly ILogger<HomeController> _logger;
+        private readonly ISchemaLoaderService _schemaLoaderService;
+        private readonly IOllamaService _ollamaService;
+
+        public HomeController(
+            ILogger<HomeController> logger,
+            ISchemaLoaderService schemaLoaderService,
+            IOllamaService ollamaService)
+        {
+            _logger = logger;
+            _schemaLoaderService = schemaLoaderService;
+            _ollamaService = ollamaService;
+        }
+
+        public async Task<IActionResult> Index()
+        {
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+            var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
+
+            ViewBag.IsSchemaLoaded = currentSchema != null;
+            ViewBag.IsOllamaAvailable = isOllamaAvailable;
+            ViewBag.SchemaInfo = currentSchema != null
+                ? $"{currentSchema.DatabaseName} ({currentSchema.DatabaseType}) - {currentSchema.Tables.Count} tablas"
+                : "No hay esquema cargado";
+
+            return View();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> CheckOllamaConnection()
+        {
+            try
+            {
+                _logger.LogInformation("?? Verificando conexión con Ollama...");
+
+                var isAvailable = await _ollamaService.IsAvailableAsync();
+
+                if (isAvailable)
+                {
+                    _logger.LogInformation("? Ollama está disponible y funcionando correctamente");
+                    return Json(new
+                    {
+                        success = true,
+                        message = "? Conexión exitosa con Ollama",
+                        details = "El servicio de IA está funcionando correctamente y listo para generar consultas SQL.",
+                        status = "online"
+                    });
+                }
+                else
+                {
+                    _logger.LogWarning("?? Ollama no está disponible");
+                    return Json(new
+                    {
+                        success = false,
+                        message = "?? No se pudo conectar con Ollama",
+                        details = "Verifica que Ollama esté ejecutándose en http://localhost:11434\n\nPara iniciarlo, ejecuta: ollama serve",
+                        status = "offline",
+                        suggestions = new[]
+                        {
+                            "Ejecutar: ollama serve",
+                            "Verificar que el modelo esté instalado: ollama pull codellama",
+                            "Comprobar que el puerto 11434 no esté bloqueado"
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Error verificando conexión con Ollama");
+                return Json(new
+                {
+                    success = false,
+                    message = "? Error al verificar conexión",
+                    details = $"Error: {ex.Message}",
+                    status = "error"
+                });
+            }
+        }
+
+        public IActionResult Privacy()
+        {
+            return View();
+        }
+
+        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+        public IActionResult Error()
+        {
+            return View();
+        }
+    }
+}

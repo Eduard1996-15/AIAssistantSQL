@@ -1,0 +1,187 @@
+﻿@{
+    ViewData["Title"] = "Configuración del Sistema";
+    var models = ViewBag.AvailableModels as List<AIAssistantSQL.Models.OllamaModel>;
+    var currentModel = ViewBag.CurrentModel as string;
+}
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1 class="mb-3">
+            <i class="bi bi-gear-fill"></i> Configuración del Sistema
+        </h1>
+        <p class="lead">Configura el modelo de IA y otras opciones del sistema</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-robot"></i> Modelo de IA (Ollama)</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Modelo Actual:</strong> <span class="badge bg-success fs-6">@currentModel</span>
+                </div>
+
+                @if (models != null && models.Any())
+                {
+                    <h6 class="mt-4 mb-3">Modelos Disponibles:</h6>
+                    <p class="text-muted">
+                        Selecciona el modelo que deseas usar para generar consultas SQL. 
+                        Los modelos especializados en código (como CodeLlama) suelen generar mejores consultas SQL.
+                    </p>
+
+                    <div class="list-group">
+                        @foreach (var aiModel in models)
+                        {
+                            var isActive = aiModel.Name == currentModel;
+                            var cardClass = isActive ? "list-group-item-primary" : "";
+                            
+                            <div class="list-group-item @cardClass">
+                                <div class="row align-items-center">
+                                    <div class="col-md-6">
+                                        <div class="d-flex align-items-center">
+                                            @if (aiModel.IsRecommendedForSQL)
+                                            {
+                                                <span class="badge bg-success me-2">
+                                                    <i class="bi bi-star-fill"></i> Recomendado para SQL
+                                                </span>
+                                            }
+                                            @if (isActive)
+                                            {
+                                                <span class="badge bg-primary me-2">
+                                                    <i class="bi bi-check-circle-fill"></i> En Uso
+                                                </span>
+                                            }
+                                        </div>
+                                        <h6 class="mb-1 mt-2">
+                                            <i class="bi bi-cpu"></i> @aiModel.Name
+                                        </h6>
+                                        <p class="mb-1 text-muted">@aiModel.Description</p>
+                                        <small class="text-muted">
+                                            <i class="bi bi-hdd"></i> Tamaño: @aiModel.Size | 
+                                            <i class="bi bi-calendar"></i> Actualizado: @aiModel.ModifiedAt.ToString("dd/MM/yyyy")
+                                        </small>
+                                    </div>
+                                    <div class="col-md-6 text-end">
+                                        @if (!isActive)
+                                        {
+                                            <form asp-controller="Settings" asp-action="ChangeModel" method="post" class="d-inline">
+                                                <input type="hidden" name="modelName" value="@aiModel.Name" />
+                                                <button type="submit" class="btn btn-primary">
+                                                    <i class="bi bi-arrow-right-circle"></i> Usar este Modelo
+                                                </button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-success" disabled>
+                                                <i class="bi bi-check-circle-fill"></i> Modelo Activo
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="alert alert-warning mt-4">
+                        <h6><i class="bi bi-lightbulb"></i> Consejos:</h6>
+                        <ul class="mb-0">
+                            <li><strong>CodeLlama:</strong> Mejor para generar SQL complejo y preciso</li>
+                            <li><strong>Llama 3.2:</strong> Rápido y eficiente para consultas simples</li>
+                            <li><strong>Mistral:</strong> Buen balance entre velocidad y precisión</li>
+                            <li>Los modelos más grandes (> 10GB) son más precisos pero más lentos</li>
+                        </ul>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-danger">
+                        <h5><i class="bi bi-exclamation-triangle"></i> No hay modelos disponibles</h5>
+                        <p>No se encontraron modelos instalados en Ollama.</p>
+                        <hr>
+                        <h6>Soluciones:</h6>
+                        <ol>
+                            <li>
+                                <strong>Verifica que Ollama esté ejecutándose:</strong><br>
+                                <code>ollama serve</code>
+                            </li>
+                            <li>
+                                <strong>Instala un modelo:</strong><br>
+                                <code>ollama pull llama3.2</code> (rápido, 2GB)<br>
+                                <code>ollama pull codellama</code> (recomendado para SQL, 7GB)<br>
+                                <code>ollama pull mistral</code> (buen balance, 7GB)
+                            </li>
+                            <li>
+                                <strong>Verifica los modelos instalados:</strong><br>
+                                <code>ollama list</code>
+                            </li>
+                        </ol>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Información del Sistema</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="bi bi-server"></i> Ollama</h6>
+                        <ul>
+                            <li><strong>URL:</strong> http://localhost:11434</li>
+                            <li><strong>Modelo Actual:</strong> @currentModel</li>
+                            <li><strong>Modelos Disponibles:</strong> @(models?.Count ?? 0)</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="bi bi-code-square"></i> Aplicación</h6>
+                        <ul>
+                            <li><strong>Framework:</strong> .NET 8 (C# 12)</li>
+                            <li><strong>Arquitectura:</strong> ASP.NET Core MVC</li>
+                            <li><strong>Base de Datos:</strong> SQL Server / PostgreSQL</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <hr>
+
+                <h6><i class="bi bi-terminal"></i> Comandos Útiles de Ollama:</h6>
+                <div class="code-block">
+                    # Ver modelos instalados<br>
+                    ollama list<br>
+                    <br>
+                    # Instalar un modelo<br>
+                    ollama pull llama3.2<br>
+                    ollama pull codellama<br>
+                    <br>
+                    # Eliminar un modelo<br>
+                    ollama rm llama2<br>
+                    <br>
+                    # Iniciar Ollama<br>
+                    ollama serve
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Confirmar antes de cambiar modelo
+            $('form[action*="ChangeModel"]').submit(function(e) {
+                var modelName = $(this).find('input[name="modelName"]').val();
+                if (!confirm('¿Cambiar a ' + modelName + '?\n\nLas siguientes consultas usarán este modelo.')) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+        });
+    </script>
+}

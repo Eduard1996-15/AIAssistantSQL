@@ -1,0 +1,99 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Repositories;
+using AIAssistantSQL.Services;
+using System.Net.Http;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllersWithViews();
+
+// Configurar sesiones para mantener el estado de la conexión
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(2);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
+// Configurar HttpClient para Ollama
+builder.Services.AddHttpClient<OllamaService>(client =>
+{
+    // Configuración específica para Ollama
+    client.BaseAddress = new Uri("http://localhost:11434/");
+    client.Timeout = TimeSpan.FromSeconds(35);
+    
+    // Headers por defecto
+    client.DefaultRequestHeaders.Add("User-Agent", "AIAssistantSQL/1.0");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    
+    // Forzar cierre de conexiones
+    client.DefaultRequestHeaders.Connection.Add("close");
+})
+.ConfigurePrimaryHttpMessageHandler(() =>
+{
+    return new SocketsHttpHandler()
+    {
+        PooledConnectionLifetime = TimeSpan.FromSeconds(30),
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),
+        MaxConnectionsPerServer = 1,
+        EnableMultipleHttp2Connections = false,
+        UseCookies = false,
+        UseProxy = false,
+        ConnectTimeout = TimeSpan.FromSeconds(5),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(5),
+        KeepAlivePingDelay = TimeSpan.FromSeconds(10),
+        ResponseDrainTimeout = TimeSpan.FromSeconds(5)
+    };
+});
+
+// Registrar servicios de IA
+builder.Services.AddScoped<OllamaService>();
+builder.Services.AddScoped<GoogleAIService>();
+builder.Services.AddScoped<AIServiceFactory>();
+
+// Registrar IOllamaService usando el factory (mantener compatibilidad)
+builder.Services.AddScoped<IOllamaService>(sp =>
+{
+    var factory = sp.GetRequiredService<AIServiceFactory>();
+    var aiService = factory.GetAIService();
+    
+    // Si es Ollama, retornarlo como IOllamaService
+    if (aiService is OllamaService ollamaService)
+    {
+        return ollamaService;
+    }
+    
+    // Si es otro proveedor pero se necesita IOllamaService, crear un wrapper
+    // Por ahora, retornar Ollama por defecto para compatibilidad
+    return sp.GetRequiredService<OllamaService>();
+});
+
+// Registrar otros servicios
+builder.Services.AddSingleton<ISchemaLoaderService, SchemaLoaderService>();
+builder.Services.AddSingleton<ISqlValidatorService, SqlValidatorService>();
+builder.Services.AddScoped<IQueryRepository, QueryRepository>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthorization();
+app.UseSession();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();

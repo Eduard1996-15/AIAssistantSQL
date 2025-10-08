@@ -1,0 +1,103 @@
+using AIAssistantSQL.Interfaces;
+
+namespace AIAssistantSQL.Services
+{
+    public class AIServiceFactory
+    {
+        private readonly IServiceProvider _serviceProvider;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<AIServiceFactory> _logger;
+
+        public AIServiceFactory(
+            IServiceProvider serviceProvider,
+            IConfiguration configuration,
+            ILogger<AIServiceFactory> logger)
+        {
+            _serviceProvider = serviceProvider;
+            _configuration = configuration;
+            _logger = logger;
+        }
+
+        public IOllamaService GetAIService()
+        {
+            var provider = _configuration["AI:Provider"] ?? "Ollama";
+
+            _logger.LogInformation($"?? Proveedor de IA seleccionado: {provider}");
+
+            IOllamaService service = provider.ToLower() switch
+            {
+                "googleai" or "gemini" => (IOllamaService)_serviceProvider.GetRequiredService<GoogleAIService>(),
+                "deepseek" or "deepseekai" => (IOllamaService)_serviceProvider.GetRequiredService<DeepSeekAIService>(),
+                "ollama" => (IOllamaService)_serviceProvider.GetRequiredService<OllamaService>(),
+                _ => (IOllamaService)_serviceProvider.GetRequiredService<OllamaService>() // Por defecto Ollama
+            };
+
+            return service;
+        }
+
+        public List<AIProviderInfo> GetAvailableProviders()
+        {
+            var providers = new List<AIProviderInfo>();
+
+            // Ollama siempre disponible (local)
+            providers.Add(new AIProviderInfo
+            {
+                Name = "Ollama",
+                DisplayName = "Ollama (Local)",
+                Description = "IA local con CodeLlama - Privado, sin límites",
+                IsConfigured = true,
+                Icon = "??"
+            });
+
+            // Google AI
+            var googleApiKey = _configuration["GoogleAI:ApiKey"];
+            if (!string.IsNullOrWhiteSpace(googleApiKey))
+            {
+                providers.Add(new AIProviderInfo
+                {
+                    Name = "GoogleAI",
+                    DisplayName = "Google AI (Gemini)",
+                    Description = "Gemini Flash - Rápido y preciso",
+                    IsConfigured = true,
+                    Icon = "??"
+                });
+            }
+
+            // DeepSeek AI
+            var deepSeekApiKey = _configuration["DeepSeekAI:ApiKey"];
+            if (!string.IsNullOrWhiteSpace(deepSeekApiKey))
+            {
+                providers.Add(new AIProviderInfo
+                {
+                    Name = "DeepSeek",
+                    DisplayName = "DeepSeek AI",
+                    Description = "DeepSeek Chat - Especializado en código y SQL",
+                    IsConfigured = true,
+                    Icon = "??"
+                });
+            }
+
+            return providers;
+        }
+
+        public string GetCurrentProvider()
+        {
+            return _configuration["AI:Provider"] ?? "Ollama";
+        }
+
+        public void SetProvider(string providerName)
+        {
+            _configuration["AI:Provider"] = providerName;
+            _logger.LogInformation($"? Proveedor cambiado a: {providerName}");
+        }
+    }
+
+    public class AIProviderInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public bool IsConfigured { get; set; }
+        public string Icon { get; set; } = string.Empty;
+    }
+}

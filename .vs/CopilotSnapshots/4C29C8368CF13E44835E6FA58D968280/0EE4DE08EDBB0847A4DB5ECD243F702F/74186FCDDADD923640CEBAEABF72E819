@@ -1,0 +1,12 @@
+﻿{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "Ollama": {
+    "Url": "http://localhost:11434",
+    "Model": "llama3.2"
+  }
+}

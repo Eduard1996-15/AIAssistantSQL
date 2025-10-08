@@ -1,0 +1,828 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using System.Text;
+using System.Text.Json;
+
+namespace AIAssistantSQL.Services
+{
+    /// <summary>
+    /// Servicio para interactuar con Ollama y generar consultas SQL
+    /// </summary>
+    public class OllamaService : IOllamaService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<OllamaService> _logger;
+        private string _model; // Cambiado de readonly para poder modificarlo
+        private const string OllamaGenerateEndpoint = "api/generate";
+
+        // Constructor que recibe HttpClient por inyección de dependencias (como tu app SCU)
+        public OllamaService(HttpClient httpClient, IConfiguration configuration, ILogger<OllamaService> logger)
+        {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _configuration = configuration;
+            _logger = logger;
+            _model = _configuration["Ollama:Model"] ?? "llama3.2";
+            
+            // El HttpClient ya viene configurado desde Program.cs
+            _logger.LogInformation($"?? OllamaService inicializado - Modelo: {_model}");
+            _logger.LogInformation($"?? BaseAddress: {_httpClient.BaseAddress}");
+        }
+
+        /// <summary>
+        /// Obtiene la lista de modelos disponibles en Ollama
+        /// </summary>
+        public async Task<List<OllamaModel>> GetAvailableModelsAsync()
+        {
+            try
+            {
+                _logger.LogInformation("?? Obteniendo lista de modelos disponibles...");
+
+                var response = await _httpClient.GetAsync("api/tags");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning($"?? Error obteniendo modelos: {response.StatusCode}");
+                    return new List<OllamaModel>();
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var jsonDoc = JsonDocument.Parse(content);
+
+                var models = new List<OllamaModel>();
+
+                if (jsonDoc.RootElement.TryGetProperty("models", out JsonElement modelsElement))
+                {
+                    foreach (var modelElement in modelsElement.EnumerateArray())
+                    {
+                        var name = modelElement.GetProperty("name").GetString() ?? "";
+                        var sizeBytes = modelElement.GetProperty("size").GetInt64();
+                        var modifiedAt = modelElement.GetProperty("modified_at").GetDateTime();
+
+                        // Convertir tamaño a formato legible
+                        var sizeGB = sizeBytes / (1024.0 * 1024.0 * 1024.0);
+                        var sizeFormatted = sizeGB >= 1 
+                            ? $"{sizeGB:F1} GB" 
+                            : $"{sizeBytes / (1024.0 * 1024.0):F0} MB";
+
+                        // Determinar si es recomendado para SQL
+                        var isRecommendedForSQL = name.Contains("codellama", StringComparison.OrdinalIgnoreCase) ||
+                                                   name.Contains("code", StringComparison.OrdinalIgnoreCase) ||
+                                                   name.Contains("sql", StringComparison.OrdinalIgnoreCase);
+
+                        var description = GetModelDescription(name);
+
+                        models.Add(new OllamaModel
+                        {
+                            Name = name,
+                            Size = sizeFormatted,
+                            ModifiedAt = modifiedAt,
+                            Description = description,
+                            IsRecommendedForSQL = isRecommendedForSQL
+                        });
+                    }
+                }
+
+                _logger.LogInformation($"? Encontrados {models.Count} modelos");
+                return models.OrderByDescending(m => m.IsRecommendedForSQL).ThenBy(m => m.Name).ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Error obteniendo modelos de Ollama");
+                return new List<OllamaModel>();
+            }
+        }
+
+        /// <summary>
+        /// Obtiene el modelo actualmente en uso
+        /// </summary>
+        public string GetCurrentModel()
+        {
+            return _model;
+        }
+
+        /// <summary>
+        /// Cambia el modelo a usar
+        /// </summary>
+        public void SetModel(string modelName)
+        {
+            if (string.IsNullOrWhiteSpace(modelName))
+            {
+                throw new ArgumentException("El nombre del modelo no puede estar vacío", nameof(modelName));
+            }
+
+            _logger.LogInformation($"?? Cambiando modelo de '{_model}' a '{modelName}'");
+            _model = modelName;
+            _logger.LogInformation($"? Modelo actualizado a: {_model}");
+        }
+
+        private string GetModelDescription(string modelName)
+        {
+            var lowerName = modelName.ToLower();
+
+            if (lowerName.Contains("codellama"))
+                return "?? Especializado en código y SQL - Recomendado";
+            else if (lowerName.Contains("code"))
+                return "?? Optimizado para programación y SQL";
+            else if (lowerName.Contains("sql"))
+                return "??? Especializado en bases de datos";
+            else if (lowerName.Contains("llama3.2"))
+                return "?? Modelo rápido y ligero - Buen balance";
+            else if (lowerName.Contains("llama3"))
+                return "? Modelo general versión 3";
+            else if (lowerName.Contains("llama2"))
+                return "?? Modelo general versión 2";
+            else if (lowerName.Contains("mistral"))
+                return "?? Modelo eficiente y preciso";
+            else if (lowerName.Contains("phi"))
+                return "?? Modelo pequeño y eficiente";
+            else if (lowerName.Contains("gemma"))
+                return "?? Modelo de Google - Alta calidad";
+            else
+                return "?? Modelo de propósito general";
+        }
+
+        public async Task<string> GenerateSQLFromNaturalLanguageAsync(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            CancellationTokenSource cts = null;
+            HttpResponseMessage response = null;
+            
+            try
+            {
+                var prompt = BuildPrompt(naturalLanguageQuery, schema);
+
+                _logger.LogInformation($"?? Enviando consulta a Ollama con modelo: {_model}");
+
+                // Request EXACTO como tu app SCU
+                var requestData = new
+                {
+                    model = _model,
+                    prompt = prompt,
+                    stream = false,
+                    options = new 
+                    {
+                        temperature = 0.3,
+                        top_p = 0.8,
+                        max_tokens = 1024,
+                        num_predict = 512,
+                        repeat_penalty = 1.1
+                    }
+                };
+
+                var json = JsonSerializer.Serialize(requestData);
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                _logger.LogInformation($"?? Enviando petición a: {OllamaGenerateEndpoint}");
+                _logger.LogInformation($"?? URL completa: {_httpClient.BaseAddress}{OllamaGenerateEndpoint}");
+
+                // CancellationToken igual que tu app SCU
+                cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+                try
+                {
+                    // USAR URL RELATIVA como en tu app SCU
+                    response = await _httpClient.PostAsync(OllamaGenerateEndpoint, content, cts.Token);
+                    
+                    _logger.LogInformation($"?? Respuesta recibida: {response.StatusCode}");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync(cts.Token);
+                        _logger.LogWarning($"?? Ollama respondió con error: {response.StatusCode} - {response.ReasonPhrase}");
+                        _logger.LogWarning($"?? Contenido del error: {errorContent}");
+                        
+                        return "**Error de conexion con IA**\n\n" +
+                               $"**Estado:** {response.StatusCode} - {response.ReasonPhrase}\n" +
+                               "**Solucion:**\n" +
+                               "1. Verificar que Ollama este ejecutandose: `ollama serve`\n" +
+                               "2. Comprobar que el modelo este instalado: `ollama pull llama3.2`\n" +
+                               "3. Verificar conectividad en: http://localhost:11434\n\n" +
+                               "**Nota:** El sistema continua funcionando normalmente.";
+                    }
+
+                    string responseContent;
+                    try
+                    {
+                        responseContent = await response.Content.ReadAsStringAsync(cts.Token);
+                        _logger.LogInformation($"?? Contenido recibido: {responseContent.Length} caracteres");
+                    }
+                    catch (Exception readEx)
+                    {
+                        _logger.LogError(readEx, "? Error leyendo contenido de respuesta");
+                        throw new Exception("Error leyendo respuesta de IA");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(responseContent))
+                    {
+                        _logger.LogWarning("?? Respuesta vacía de Ollama");
+                        throw new Exception("Respuesta vacía del servicio de IA");
+                    }
+
+                    JsonDocument jsonResponse;
+                    try
+                    {
+                        jsonResponse = JsonDocument.Parse(responseContent);
+                    }
+                    catch (JsonException jsonEx)
+                    {
+                        _logger.LogError(jsonEx, "? Error deserializando JSON");
+                        throw new Exception("Error procesando respuesta de IA");
+                    }
+
+                    // Parsear respuesta IGUAL que tu app SCU
+                    if (jsonResponse.RootElement.TryGetProperty("response", out JsonElement responseElement))
+                    {
+                        var generatedText = responseElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(generatedText))
+                        {
+                            _logger.LogInformation("? Respuesta de IA procesada exitosamente");
+                            
+                            // Pequeña pausa para asegurar completion
+                            await Task.Delay(10, cts.Token);
+                            
+                            var sql = ExtractSqlFromResponse(generatedText);
+                            _logger.LogInformation($"? SQL generado exitosamente: {sql}");
+                            
+                            return sql;
+                        }
+                        else
+                        {
+                            _logger.LogWarning("?? Respuesta de IA vacía en campo 'response'");
+                            throw new Exception("Respuesta vacía. Intente con una pregunta más específica.");
+                        }
+                    }
+
+                    // Verificar si hay un error en la respuesta
+                    if (jsonResponse.RootElement.TryGetProperty("error", out JsonElement errorElement))
+                    {
+                        var errorMessage = errorElement.GetString();
+                        _logger.LogError($"? Error reportado por Ollama: {errorMessage}");
+                        throw new Exception($"Error del servicio de IA: {errorMessage}");
+                    }
+
+                    _logger.LogWarning("?? Estructura de respuesta inesperada");
+                    throw new Exception("Respuesta inesperada del servicio de IA");
+                }
+                catch (OperationCanceledException) when (cts?.Token.IsCancellationRequested == true)
+                {
+                    _logger.LogWarning("? Timeout de 30 segundos alcanzado");
+                    throw new Exception(
+                        "? Timeout del servicio de IA\n\n" +
+                        "La consulta tardó demasiado (30 segundos).\n\n" +
+                        "Sugerencias:\n" +
+                        "- Intente con una pregunta más corta\n" +
+                        "- Verifique recursos del sistema\n" +
+                        "- Reinicie Ollama si persiste");
+                }
+                finally
+                {
+                    // CRÍTICO: Liberar recursos HTTP
+                    if (response != null)
+                    {
+                        try
+                        {
+                            response.Dispose();
+                        }
+                        catch (Exception disposeEx)
+                        {
+                            _logger.LogWarning(disposeEx, "?? Error liberando HttpResponseMessage");
+                        }
+                    }
+                }
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogError(httpEx, "?? Error de conexión HTTP");
+                throw new Exception(
+                    $"? Error de conectividad\n\n" +
+                    $"Detalle: {httpEx.Message}\n\n" +
+                    "Soluciones:\n" +
+                    "1. Verificar que Ollama esté ejecutándose: ollama serve\n" +
+                    "2. Comprobar puerto 11434\n" +
+                    "3. Verificar firewall\n" +
+                    "4. Probar: curl http://localhost:11434/api/tags",
+                    httpEx);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not HttpRequestException)
+            {
+                _logger.LogError(ex, "? Error inesperado");
+                throw new Exception($"Error al comunicarse con Ollama: {ex.Message}", ex);
+            }
+            finally
+            {
+                // CRÍTICO: Liberar CancellationTokenSource
+                try
+                {
+                    cts?.Dispose();
+                }
+                catch (Exception ctsEx)
+                {
+                    _logger.LogWarning(ctsEx, "?? Error liberando CancellationTokenSource");
+                }
+
+                // CRÍTICO: Garbage collection
+                try
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                catch (Exception gcEx)
+                {
+                    _logger.LogWarning(gcEx, "?? Error en GC");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Interpreta los resultados de una consulta SQL y genera una respuesta en lenguaje natural
+        /// </summary>
+        public async Task<string> InterpretQueryResultsAsync(
+            string originalQuestion, 
+            string executedSql, 
+            List<Dictionary<string, object>> results,
+            List<string> conversationHistory = null)
+        {
+            CancellationTokenSource cts = null;
+            HttpResponseMessage response = null;
+            
+            try
+            {
+                var prompt = BuildInterpretationPrompt(originalQuestion, executedSql, results, conversationHistory);
+
+                _logger.LogInformation($"?? Interpretando resultados con IA...");
+
+                var requestData = new
+                {
+                    model = _model,
+                    prompt = prompt,
+                    stream = false,
+                    options = new 
+                    {
+                        temperature = 0.7, // Más creativo para respuestas naturales
+                        top_p = 0.9,
+                        max_tokens = 2048,
+                        num_predict = 1024,
+                        repeat_penalty = 1.1
+                    }
+                };
+
+                var json = JsonSerializer.Serialize(requestData);
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+                response = await _httpClient.PostAsync(OllamaGenerateEndpoint, content, cts.Token);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("?? Error al interpretar resultados");
+                    return FormatResultsAsTable(results); // Fallback a tabla simple
+                }
+
+                string responseContent = await response.Content.ReadAsStringAsync(cts.Token);
+                var jsonResponse = JsonDocument.Parse(responseContent);
+
+                if (jsonResponse.RootElement.TryGetProperty("response", out JsonElement responseElement))
+                {
+                    var interpretation = responseElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(interpretation))
+                    {
+                        _logger.LogInformation("? Interpretación generada exitosamente");
+                        return interpretation;
+                    }
+                }
+
+                return FormatResultsAsTable(results); // Fallback
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Error interpretando resultados");
+                return FormatResultsAsTable(results); // Fallback
+            }
+            finally
+            {
+                response?.Dispose();
+                cts?.Dispose();
+            }
+        }
+
+        public async Task<bool> IsAvailableAsync()
+        {
+            try
+            {
+                _logger.LogInformation("?? Verificando disponibilidad de Ollama...");
+
+                var response = await _httpClient.GetAsync("api/tags");
+
+                _logger.LogInformation($"?? Respuesta: {response.StatusCode}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation("? Ollama disponible");
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning($"?? Ollama respondió: {response.StatusCode}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Ollama no disponible");
+                return false;
+            }
+        }
+
+        private string BuildPrompt(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("You are an expert SQL query generator with advanced understanding of database relationships and aggregations.");
+            sb.AppendLine("Your task is to convert natural language questions into precise SQL SELECT queries.");
+            sb.AppendLine();
+            sb.AppendLine("⚠️ CRITICAL RULES:");
+            sb.AppendLine("1. Generate ONLY the SQL query - no explanations, no markdown, no extra text");
+            sb.AppendLine("2. Use the SIMPLEST possible query that answers the CURRENT question");
+            sb.AppendLine("3. **FOCUS ON THE CURRENT QUESTION ONLY** - Do not mix it with previous questions");
+            sb.AppendLine("4. **COPY EXACT table and column names from the schema below - including underscores, capitalization, etc.**");
+            sb.AppendLine("5. **UNDERSTAND TABLE RELATIONSHIPS** using Foreign Keys provided in the schema");
+            sb.AppendLine("6. **AGGREGATION RULES**:");
+            sb.AppendLine("   - 'how many', 'count', 'cantidad', 'cuántos' → Use COUNT(*)");
+            sb.AppendLine("   - 'more than X', 'less than X', 'at least X', 'más de X', 'menos de X' → Use HAVING COUNT(*) > X (or <, >=, <=)");
+            sb.AppendLine("   - 'with the most', 'with the least', 'con más', 'con menos', 'el que más' → Use ORDER BY COUNT(*) DESC/ASC + TOP 1 or LIMIT 1");
+            sb.AppendLine("   - 'top X', 'first X', 'últimos X', 'primeros X' → Use ORDER BY + TOP X or LIMIT X");
+            sb.AppendLine("   - Always use GROUP BY when counting related records");
+            sb.AppendLine("7. **SQL SERVER SYNTAX**: Use TOP instead of LIMIT");
+            sb.AppendLine("8. **DO NOT confuse column values with aggregation conditions**");
+            sb.AppendLine("   Example: 'documents with more than 15 lines' means:");
+            sb.AppendLine("   ✅ CORRECT: COUNT(*) > 15 (counting rows)");
+            sb.AppendLine("   ❌ WRONG: Nivel = 15 or LineaId = 15 (comparing column value)");
+            sb.AppendLine();
+            
+            sb.AppendLine("🔗 UNDERSTANDING TABLE RELATIONSHIPS:");
+            sb.AppendLine("When you see Foreign Keys in the schema:");
+            sb.AppendLine("  - TableA.ColumnX → TableB.ColumnY means TableA references TableB");
+            sb.AppendLine("  - If user asks about related data, JOIN these tables");
+            sb.AppendLine("  - If user asks 'count related records', use GROUP BY on the parent table");
+            sb.AppendLine();
+            sb.AppendLine("📊 AGGREGATION PATTERNS:");
+            sb.AppendLine();
+            sb.AppendLine("Pattern 1: 'Show X with more than Y related records'");
+            sb.AppendLine("  Example: 'documents with more than 15 lines'");
+            sb.AppendLine("  Solution: SELECT ParentId, COUNT(*) FROM Child GROUP BY ParentId HAVING COUNT(*) > 15");
+            sb.AppendLine();
+            sb.AppendLine("Pattern 2: 'How many X does each Y have?'");
+            sb.AppendLine("  Example: 'how many lines does each document have?'");
+            sb.AppendLine("  Solution: SELECT DocumentoId, COUNT(*) AS NumLines FROM lineas_documento GROUP BY DocumentoId");
+            sb.AppendLine();
+            sb.AppendLine("Pattern 3: 'Show the X with most/least Y' (SINGLE RESULT)");
+            sb.AppendLine("  Example: 'document with most lines'");
+            sb.AppendLine("  Solution: SELECT TOP 1 DocumentoId, COUNT(*) AS NumLines FROM lineas_documento GROUP BY DocumentoId ORDER BY COUNT(*) DESC");
+            sb.AppendLine("  ⚠️ IMPORTANT: Use TOP 1 (not HAVING), and ORDER BY COUNT(*) DESC");
+            sb.AppendLine();
+            sb.AppendLine("Pattern 4: 'Show top X Y' (MULTIPLE RESULTS)");
+            sb.AppendLine("  Example: 'top 5 documents with most lines'");
+            sb.AppendLine("  Solution: SELECT TOP 5 DocumentoId, COUNT(*) FROM lineas_documento GROUP BY DocumentoId ORDER BY COUNT(*) DESC");
+            sb.AppendLine();
+            
+            sb.AppendLine($"📊 DATABASE INFORMATION:");
+            sb.AppendLine($"Type: {schema.DatabaseType}");
+            sb.AppendLine($"Name: {schema.DatabaseName}");
+            sb.AppendLine();
+            sb.AppendLine("📋 COMPLETE DATABASE SCHEMA:");
+            sb.AppendLine();
+
+            foreach (var table in schema.Tables)
+            {
+                sb.AppendLine($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                sb.AppendLine($"TABLE: {table.TableName}");
+                sb.AppendLine($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                sb.AppendLine("Columns:");
+
+                foreach (var column in table.Columns)
+                {
+                    var nullable = column.IsNullable ? "NULL" : "NOT NULL";
+                    var identity = column.IsIdentity ? " [AUTO-INCREMENT]" : "";
+                    var pk = table.PrimaryKeys.Contains(column.ColumnName) ? " [PRIMARY KEY]" : "";
+                    
+                    sb.AppendLine($"  • {column.ColumnName}: {column.DataType}{(column.MaxLength.HasValue ? $"({column.MaxLength})" : "")} {nullable}{identity}{pk}");
+                }
+
+                if (table.ForeignKeys.Any())
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("🔗 RELATIONSHIPS (Foreign Keys):");
+                    foreach (var fk in table.ForeignKeys)
+                    {
+                        sb.AppendLine($"  • {table.TableName}.{fk.ColumnName} → {fk.ReferencedTable}.{fk.ReferencedColumn}");
+                        sb.AppendLine($"    This means: Each {table.TableName} belongs to/references a {fk.ReferencedTable}");
+                    }
+                }
+                
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine("❓ CURRENT USER'S QUESTION (FOCUS ON THIS):");
+            sb.AppendLine($"➤ {naturalLanguageQuery}");
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine();
+            sb.AppendLine("📝 ANALYSIS STEPS FOR THIS SPECIFIC QUESTION:");
+            sb.AppendLine("1. **Read the question carefully**: What EXACTLY is the user asking NOW?");
+            sb.AppendLine("2. **Identify keywords**:");
+            sb.AppendLine("   - 'el que más', 'with most', 'con más' → ORDER BY DESC + TOP 1");
+            sb.AppendLine("   - 'el que menos', 'with least', 'con menos' → ORDER BY ASC + TOP 1");
+            sb.AppendLine("   - 'más de X', 'more than X' → HAVING COUNT(*) > X");
+            sb.AppendLine("   - 'top X', 'primeros X' → ORDER BY + TOP X");
+            sb.AppendLine("   - 'cuántos', 'how many' → COUNT(*)");
+            sb.AppendLine("3. **Identify the main entity**: What table is the user asking about?");
+            sb.AppendLine("4. **Identify related entities**: Are there child/related records to count?");
+            sb.AppendLine("5. **Choose the right SQL structure**:");
+            sb.AppendLine("   - Single result with 'most/least' → ORDER BY + TOP 1 (NO HAVING)");
+            sb.AppendLine("   - Multiple results with condition → GROUP BY + HAVING");
+            sb.AppendLine("   - Top N results → ORDER BY + TOP N");
+            sb.AppendLine("6. **Build the query** using EXACT table/column names from schema");
+            sb.AppendLine();
+            sb.AppendLine("💡 SPECIFIC EXAMPLES FOR THIS DATABASE:");
+            
+            // Generar ejemplos específicos basados en el esquema actual
+            var documentTable = schema.Tables.FirstOrDefault(t => 
+                t.TableName.Contains("DOCUMENTO", StringComparison.OrdinalIgnoreCase) ||
+                t.TableName.Contains("Document", StringComparison.OrdinalIgnoreCase));
+            
+            var lineasTable = schema.Tables.FirstOrDefault(t => 
+                t.TableName.Contains("linea", StringComparison.OrdinalIgnoreCase));
+
+            if (documentTable != null && lineasTable != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Example 1: 'documents with more than 15 lines' (MULTIPLE, with condition)");
+                sb.AppendLine($"CORRECT SQL:");
+                sb.AppendLine($"SELECT DocumentoId, COUNT(*) AS NumLineas");
+                sb.AppendLine($"FROM {lineasTable.TableName}");
+                sb.AppendLine($"GROUP BY DocumentoId");
+                sb.AppendLine($"HAVING COUNT(*) > 15");
+                sb.AppendLine();
+                sb.AppendLine("Example 2: 'document with most lines' (SINGLE, superlative)");
+                sb.AppendLine($"CORRECT SQL:");
+                sb.AppendLine($"SELECT TOP 1 DocumentoId, COUNT(*) AS NumLineas");
+                sb.AppendLine($"FROM {lineasTable.TableName}");
+                sb.AppendLine($"GROUP BY DocumentoId");
+                sb.AppendLine($"ORDER BY COUNT(*) DESC");
+                sb.AppendLine("⚠️ NOTE: Use TOP 1 and ORDER BY (NO HAVING)");
+                sb.AppendLine();
+                sb.AppendLine("Example 3: 'top 5 documents with most lines' (MULTIPLE, ranking)");
+                sb.AppendLine($"CORRECT SQL:");
+                sb.AppendLine($"SELECT TOP 5 DocumentoId, COUNT(*) AS NumLineas");
+                sb.AppendLine($"FROM {lineasTable.TableName}");
+                sb.AppendLine($"GROUP BY DocumentoId");
+                sb.AppendLine($"ORDER BY COUNT(*) DESC");
+            }
+            
+            sb.AppendLine();
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine("🎯 NOW GENERATE THE SQL QUERY FOR THE CURRENT QUESTION:");
+            sb.AppendLine("⚠️ Remember:");
+            sb.AppendLine("  1. Focus ONLY on the CURRENT question");
+            sb.AppendLine("  2. Use EXACT table/column names from schema");
+            sb.AppendLine("  3. For 'most/least' (superlative) → ORDER BY + TOP 1 (NO HAVING)");
+            sb.AppendLine("  4. For 'more than X' (condition) → GROUP BY + HAVING");
+            sb.AppendLine("  5. Use SQL Server syntax (TOP not LIMIT)");
+            sb.AppendLine();
+            sb.AppendLine("SQL Query (ONLY the query, no explanation):");
+
+            return sb.ToString();
+        }
+
+        private string BuildInterpretationPrompt(
+            string originalQuestion, 
+            string executedSql, 
+            List<Dictionary<string, object>> results,
+            List<string> conversationHistory)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("Eres un asistente de base de datos útil y amigable. Tu trabajo es interpretar resultados de consultas SQL y presentarlos de forma clara.");
+            sb.AppendLine();
+            sb.AppendLine("⚠️ REGLAS CRÍTICAS:");
+            sb.AppendLine("1. **RESPONDE SIEMPRE EN ESPAÑOL** - Toda tu respuesta debe estar en español");
+            sb.AppendLine("2. **ENFÓCATE SOLO EN LA PREGUNTA ACTUAL** - No mezcles con preguntas anteriores");
+            sb.AppendLine("3. Usa SOLAMENTE la información de los resultados proporcionados AHORA");
+            sb.AppendLine("4. NO inventes datos ni hagas suposiciones");
+            sb.AppendLine("5. Si no hay resultados, dilo claramente - NO inventes datos");
+            sb.AppendLine("6. Para conteos, indica el número exacto encontrado");
+            sb.AppendLine("7. Para listas, presenta los datos en formato de tabla markdown");
+            sb.AppendLine("8. Sé directo y conciso");
+            sb.AppendLine("9. Usa un tono amigable y profesional");
+            sb.AppendLine();
+            sb.AppendLine("🔍 DETECTA EL TIPO DE PREGUNTA:");
+            sb.AppendLine("- 'el que más', 'con más líneas' → Usuario pide UN SOLO resultado (el top)");
+            sb.AppendLine("- 'más de X' → Usuario pide MÚLTIPLES resultados que cumplan condición");
+            sb.AppendLine("- 'top X', 'primeros X' → Usuario pide X resultados ordenados");
+            sb.AppendLine();
+
+            sb.AppendLine($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine($"PREGUNTA ACTUAL DEL USUARIO:");
+            sb.AppendLine($"➤ {originalQuestion}");
+            sb.AppendLine($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine();
+            sb.AppendLine($"SQL EJECUTADO: {executedSql}");
+            sb.AppendLine();
+            
+            if (results == null || !results.Any())
+            {
+                sb.AppendLine("RESULTADOS DE LA CONSULTA: Sin resultados (0 filas)");
+                sb.AppendLine();
+                sb.AppendLine("INSTRUCCIONES:");
+                sb.AppendLine("- Indica claramente que no se encontraron resultados");
+                sb.AppendLine("- Sugiere por qué podría ser (ej: 'No hay usuarios activos' o 'La tabla está vacía')");
+                sb.AppendLine("- NO inventes ni asumas datos que no existen");
+            }
+            else
+            {
+                sb.AppendLine($"RESULTADOS DE LA CONSULTA ({results.Count} filas):");
+                sb.AppendLine();
+
+                // Mostrar TODOS los resultados (no solo 20)
+                var rowsToShow = results;
+                
+                // Si es un solo valor (como COUNT)
+                if (results.Count == 1 && results[0].Count == 1)
+                {
+                    var value = results[0].First().Value;
+                    var columnName = results[0].First().Key;
+                    sb.AppendLine($"{columnName}: {value}");
+                    sb.AppendLine();
+                    sb.AppendLine("INSTRUCCIONES:");
+                    sb.AppendLine("- Este es un resultado de conteo/agregación");
+                    sb.AppendLine("- Presenta el número de forma clara y directa");
+                }
+                else if (results.Count == 1)
+                {
+                    // UN SOLO RESULTADO (probablemente "el que más/menos")
+                    sb.AppendLine("⚠️ IMPORTANTE: Solo hay 1 resultado. El usuario probablemente pidió 'el que más' o 'el que menos'.");
+                    sb.AppendLine();
+                    var columns = results[0].Keys.ToList();
+                    sb.AppendLine("| " + string.Join(" | ", columns) + " |");
+                    sb.AppendLine("|" + string.Join("|", columns.Select(_ => "---")) + "|");
+                    
+                    var row = results[0];
+                    var values = columns.Select(col => 
+                    {
+                        var val = row[col];
+                        return val == null ? "NULL" : val.ToString();
+                    });
+                    sb.AppendLine("| " + string.Join(" | ", values) + " |");
+                    sb.AppendLine();
+                    sb.AppendLine("INSTRUCCIONES:");
+                    sb.AppendLine("- El usuario pidió UN solo resultado (superlativo: 'el que más', 'el que menos')");
+                    sb.AppendLine("- Responde con: 'El documento con más líneas es el DocumentoId X con Y líneas'");
+                    sb.AppendLine("- NO digas 'encontré X documentos' - solo hay UNO");
+                }
+                else
+                {
+                    // MÚLTIPLES RESULTADOS
+                    sb.AppendLine($"⚠️ Hay {results.Count} resultados. El usuario pidió múltiples registros.");
+                    sb.AppendLine();
+                    var columns = results[0].Keys.ToList();
+                    
+                    // Header
+                    sb.AppendLine("| " + string.Join(" | ", columns) + " |");
+                    sb.AppendLine("|" + string.Join("|", columns.Select(_ => "---")) + "|");
+                    
+                    // Rows
+                    foreach (var row in rowsToShow)
+                    {
+                        var values = columns.Select(col => 
+                        {
+                            var val = row[col];
+                            return val == null ? "NULL" : val.ToString();
+                        });
+                        sb.AppendLine("| " + string.Join(" | ", values) + " |");
+                    }
+                    sb.AppendLine();
+                    sb.AppendLine("INSTRUCCIONES:");
+                    sb.AppendLine("- Presenta TODOS los resultados en tabla");
+                    sb.AppendLine("- Indica cuántos registros se encontraron");
+                }
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine("📝 TU RESPUESTA (EN ESPAÑOL):");
+            sb.AppendLine();
+            sb.AppendLine("Ejemplos según el tipo:");
+            sb.AppendLine();
+            sb.AppendLine("A) Si hay 1 solo resultado (superlativo):");
+            sb.AppendLine("   'El documento con más líneas es el **DocumentoId 57** con **56 líneas**.'");
+            sb.AppendLine();
+            sb.AppendLine("B) Si hay múltiples resultados (condición):");
+            sb.AppendLine("   'Encontré **14 documentos** que tienen más de 15 líneas:'");
+            sb.AppendLine("   [tabla]");
+            sb.AppendLine("   **Total:** 14 documentos.");
+            sb.AppendLine();
+            sb.AppendLine("C) Si hay múltiples resultados (ranking):");
+            sb.AppendLine("   'Los 5 documentos con más líneas son:'");
+            sb.AppendLine("   [tabla]");
+            sb.AppendLine();
+            sb.AppendLine("⚠️ RECUERDA:");
+            sb.AppendLine("- Responde SOLO basándote en los resultados ACTUALES");
+            sb.AppendLine("- NO menciones números de preguntas anteriores (como '15 líneas' si la pregunta actual no lo menciona)");
+            sb.AppendLine("- Si hay 1 resultado, NO digas 'encontré X documentos' - di 'EL documento es...'");
+            sb.AppendLine("- Toda tu respuesta debe estar en ESPAÑOL");
+
+            return sb.ToString();
+        }
+
+        private string FormatResultsAsTable(List<Dictionary<string, object>> results)
+        {
+            if (results == null || !results.Any())
+            {
+                return "**No se encontraron resultados.**";
+            }
+
+            var sb = new StringBuilder();
+            
+            // Si es un solo valor (como COUNT)
+            if (results.Count == 1 && results[0].Count == 1)
+            {
+                var value = results[0].First().Value;
+                return $"**Resultado:** {value}";
+            }
+
+            // Tabla markdown
+            sb.AppendLine();
+            
+            // Headers
+            var columns = results[0].Keys.ToList();
+            sb.AppendLine("| " + string.Join(" | ", columns) + " |");
+            sb.AppendLine("|" + string.Join("|", columns.Select(c => "---")) + "|");
+
+            // Rows (máximo 50 para no saturar la vista)
+            foreach (var row in results.Take(50))
+            {
+                sb.AppendLine("| " + string.Join(" | ", columns.Select(c => row[c]?.ToString() ?? "NULL")) + " |");
+            }
+
+            if (results.Count > 50)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"*... y {results.Count - 50} filas más*");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"**Total de registros:** {results.Count}");
+
+            return sb.ToString();
+        }
+
+        private string ExtractSqlFromResponse(string response)
+        {
+            // Limpiar markdown code blocks
+            var sql = response.Trim();
+
+            // Remover ```sql o ``` al inicio
+            if (sql.StartsWith("```sql", StringComparison.OrdinalIgnoreCase))
+            {
+                sql = sql.Substring(6).Trim();
+            }
+            else if (sql.StartsWith("```"))
+            {
+                sql = sql.Substring(3).Trim();
+            }
+
+            // Remover ``` al final
+            if (sql.EndsWith("```"))
+            {
+                sql = sql.Substring(0, sql.Length - 3).Trim();
+            }
+
+            // Tomar solo la primera sentencia SQL
+            var lines = sql.Split('\n');
+            var sqlLines = new List<string>();
+
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedLine))
+                    continue;
+
+                // Si la línea parece ser SQL
+                if (trimmedLine.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+                    trimmedLine.StartsWith("WITH", StringComparison.OrdinalIgnoreCase) ||
+                    sqlLines.Any())
+                {
+                    sqlLines.Add(trimmedLine);
+
+                    // Si termina con ; es el final
+                    if (trimmedLine.EndsWith(";"))
+                        break;
+                }
+            }
+
+            return sqlLines.Any() ? string.Join(" ", sqlLines) : sql;
+        }
+    }
+}

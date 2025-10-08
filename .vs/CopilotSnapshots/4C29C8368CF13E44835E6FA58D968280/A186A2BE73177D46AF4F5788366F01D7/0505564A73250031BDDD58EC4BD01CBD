@@ -1,0 +1,259 @@
+﻿# AI Assistant SQL
+
+## ?? Descripción
+
+**AI Assistant SQL** es una aplicación web .NET 8 MVC que permite realizar consultas a bases de datos usando lenguaje natural. Utiliza Ollama (IA local) para interpretar tus preguntas y generar consultas SQL automáticamente.
+
+## ? Características
+
+- ?? **Consultas en Lenguaje Natural**: Pregunta en español y obtén resultados SQL
+- ?? **Seguridad**: Solo permite consultas SELECT (solo lectura)
+- ?? **Soporte Multi-BD**: SQL Server y PostgreSQL
+- ?? **3 Modos de Carga de Esquema**:
+  - Archivo JSON
+  - Conexión directa a BD
+  - Guardado/reutilización de esquemas
+- ?? **Interfaz Intuitiva**: MVC con Bootstrap 5
+- ?? **Historial de Consultas**: Mantén registro de tus consultas
+- ?? **Arquitectura Limpia**: Repositorios, Servicios e Interfaces
+
+## ??? Tecnologías
+
+- **.NET 8** (C# 12)
+- **ASP.NET Core MVC**
+- **Ollama** (IA Local)
+- **Dapper** (Micro ORM)
+- **Entity Framework Core**
+- **SQL Server** y **PostgreSQL**
+- **Bootstrap 5** + **Bootstrap Icons**
+
+## ?? Paquetes NuGet Incluidos
+
+- `OllamaSharp` - Cliente para Ollama
+- `Dapper` - Ejecución de queries
+- `Microsoft.Data.SqlClient` - SQL Server
+- `Npgsql` - PostgreSQL
+- `Microsoft.EntityFrameworkCore` - EF Core
+
+## ?? Requisitos Previos
+
+### 1. Instalar Ollama
+
+```bash
+# Descarga Ollama desde https://ollama.ai
+
+# En Windows, ejecuta el instalador
+
+# Verifica la instalación
+ollama --version
+```
+
+### 2. Descargar un modelo de IA
+
+```bash
+# Descarga el modelo (llama2 recomendado)
+ollama pull llama2
+
+# O un modelo más especializado en código
+ollama pull codellama
+```
+
+### 3. Iniciar Ollama
+
+```bash
+# Inicia el servidor de Ollama
+ollama serve
+```
+
+Ollama debería estar corriendo en `http://localhost:11434`
+
+## ?? Configuración
+
+### 1. Configurar el modelo de Ollama
+
+Edita `appsettings.json`:
+
+```json
+{
+  "Ollama": {
+    "Url": "http://localhost:11434",
+    "Model": "llama2"
+  }
+}
+```
+
+Puedes cambiar el modelo a `codellama`, `mistral`, u otro que hayas descargado.
+
+### 2. Preparar tu Base de Datos
+
+Asegúrate de tener:
+- Una base de datos SQL Server o PostgreSQL
+- La cadena de conexión con permisos de lectura
+
+## ?? Uso
+
+### 1. Iniciar la Aplicación
+
+```bash
+cd AIAssistantSQL
+dotnet run
+```
+
+La aplicación estará disponible en: `https://localhost:5001` o `http://localhost:5000`
+
+### 2. Cargar el Esquema de tu Base de Datos
+
+Ve a **Configuración BD** y elige una opción:
+
+#### Opción A: Cargar desde Conexión (Recomendado la primera vez)
+
+1. Selecciona el tipo de BD (SQL Server o PostgreSQL)
+2. Ingresa tu cadena de conexión:
+
+**SQL Server:**
+```
+Server=localhost;Database=MiBaseDatos;User Id=sa;Password=MiPassword;TrustServerCertificate=True
+```
+
+**PostgreSQL:**
+```
+Host=localhost;Database=MiBaseDatos;Username=postgres;Password=MiPassword
+```
+
+3. Click en "Conectar y Cargar"
+
+El sistema automáticamente extraerá toda la estructura de tu BD.
+
+#### Opción B: Cargar desde Archivo JSON
+
+Si ya guardaste el esquema previamente, sube el archivo `.json`.
+
+#### Opción C: Guardar Esquema
+
+Después de cargar el esquema, puedes guardarlo en un archivo JSON para reutilizarlo en otros proyectos.
+
+### 3. Realizar Consultas
+
+Ve a **Consultas** y escribe tu pregunta en lenguaje natural:
+
+#### Ejemplos de Consultas:
+
+- "Muéstrame los últimos 10 usuarios registrados"
+- "¿Cuántos productos hay en cada categoría?"
+- "Lista las ventas del mes de enero ordenadas por monto"
+- "Encuentra todos los clientes de México"
+- "¿Cuál es el producto más vendido?"
+- "Dame el total de ventas por mes del último año"
+
+### 4. Ver Resultados
+
+La aplicación:
+1. Genera automáticamente el SQL
+2. Lo valida (solo SELECT)
+3. Lo ejecuta contra tu BD
+4. Muestra los resultados en una tabla
+
+## ?? Estructura del Proyecto
+
+```
+AIAssistantSQL/
+??? Controllers/           # Controladores MVC
+?   ??? HomeController.cs
+?   ??? DatabaseController.cs
+?   ??? QueryController.cs
+??? Models/               # Modelos de datos
+?   ??? DatabaseSchema.cs
+?   ??? QueryModels.cs
+?   ??? ViewModels.cs
+??? Views/                # Vistas Razor
+?   ??? Home/
+?   ??? Database/
+?   ??? Query/
+??? Services/             # Lógica de negocio
+?   ??? OllamaService.cs
+?   ??? SchemaLoaderService.cs
+?   ??? SqlValidatorService.cs
+??? Repositories/         # Acceso a datos
+?   ??? QueryRepository.cs
+??? Interfaces/           # Contratos
+?   ??? IOllamaService.cs
+?   ??? ISchemaLoaderService.cs
+?   ??? ISqlValidatorService.cs
+?   ??? IQueryRepository.cs
+??? wwwroot/             # Archivos estáticos
+```
+
+## ?? Reutilización en Otros Proyectos
+
+### Opción 1: Copiar Carpetas de Código
+
+Copia estas carpetas a tu nuevo proyecto:
+- `Models/`
+- `Services/`
+- `Repositories/`
+- `Interfaces/`
+
+Y agrega los paquetes NuGet necesarios.
+
+### Opción 2: Usar Esquemas Guardados
+
+1. En el proyecto original, guarda el esquema de tu BD
+2. En el nuevo proyecto, sube ese archivo JSON
+3. ¡Listo para consultar!
+
+## ?? Seguridad
+
+La aplicación incluye validaciones para:
+- ? Solo permitir consultas SELECT
+- ? Bloquear INSERT, UPDATE, DELETE, DROP, etc.
+- ? Validar patrones de inyección SQL
+- ? Limpiar y sanitizar consultas
+
+**?? Nota**: Esta aplicación está diseñada para consultas de solo lectura. No uses credenciales con permisos de escritura.
+
+## ?? Troubleshooting
+
+### Ollama no conecta
+
+```bash
+# Verifica que Ollama esté corriendo
+curl http://localhost:11434/api/tags
+
+# Si no funciona, reinicia Ollama
+ollama serve
+```
+
+### El SQL generado no es correcto
+
+- Usa un modelo más especializado: `ollama pull codellama`
+- Mejora tu pregunta siendo más específico
+- Verifica que el esquema esté cargado correctamente
+
+### Error de conexión a BD
+
+- Verifica la cadena de conexión
+- Asegúrate de tener los permisos necesarios
+- Revisa que el servidor de BD esté corriendo
+
+## ?? Notas de Desarrollo
+
+- El historial de consultas se almacena en memoria (se pierde al reiniciar)
+- Para producción, considera usar una base de datos para el historial
+- La cadena de conexión se guarda en la sesión
+- Los archivos subidos se guardan en `wwwroot/uploads`
+
+## ?? Contribuciones
+
+Este proyecto es para uso personal/educativo. Siéntete libre de adaptarlo a tus necesidades.
+
+## ?? Licencia
+
+Uso libre para proyectos personales y comerciales.
+
+## ?? Contacto
+
+Para dudas o sugerencias sobre el proyecto.
+
+---
+
+**¡Disfruta consultando tus bases de datos con lenguaje natural! ??**

@@ -1,0 +1,20 @@
+using AIAssistantSQL.Models;
+
+namespace AIAssistantSQL.Interfaces
+{
+    /// <summary>
+    /// Interfaz para el repositorio de consultas a base de datos
+    /// </summary>
+    public interface IQueryRepository
+    {
+        /// <summary>
+        /// Ejecuta una consulta SQL SELECT y retorna los resultados
+        /// </summary>
+        Task<List<Dictionary<string, object?>>> ExecuteQueryAsync(string sql, string connectionString, DatabaseType databaseType);
+
+        /// <summary>
+        /// Verifica la conexión a la base de datos
+        /// </summary>
+        Task<bool> TestConnectionAsync(string connectionString, DatabaseType databaseType);
+    }
+}

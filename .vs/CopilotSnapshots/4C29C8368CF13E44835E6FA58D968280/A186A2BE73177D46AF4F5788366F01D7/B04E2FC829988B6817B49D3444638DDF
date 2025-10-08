@@ -1,0 +1,193 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class QueryController : Controller
+    {
+        private readonly IOllamaService _ollamaService;
+        private readonly ISchemaLoaderService _schemaLoaderService;
+        private readonly ISqlValidatorService _sqlValidatorService;
+        private readonly IQueryRepository _queryRepository;
+        private readonly ILogger<QueryController> _logger;
+
+        // En memoria para demo - en producción usar base de datos
+        private static List<QueryHistory> _queryHistory = new();
+
+        public QueryController(
+            IOllamaService ollamaService,
+            ISchemaLoaderService schemaLoaderService,
+            ISqlValidatorService sqlValidatorService,
+            IQueryRepository queryRepository,
+            ILogger<QueryController> logger)
+        {
+            _ollamaService = ollamaService;
+            _schemaLoaderService = schemaLoaderService;
+            _sqlValidatorService = sqlValidatorService;
+            _queryRepository = queryRepository;
+            _logger = logger;
+        }
+
+        public IActionResult Index()
+        {
+            var currentConnection = DatabaseController.GetCurrentConnection();
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+
+            var viewModel = new QueryViewModel
+            {
+                History = _queryHistory.OrderByDescending(q => q.Timestamp).Take(10).ToList(),
+                HasActiveConnection = currentConnection != null,
+                DatabaseName = currentSchema?.DatabaseName
+            };
+
+            if (currentConnection == null || currentSchema == null)
+            {
+                TempData["Warning"] = "?? Primero debes configurar la conexión a tu base de datos. <a href='/Database'>Ir a Configuración</a>";
+            }
+
+            return View(viewModel);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Execute(string naturalLanguageQuery)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var response = new QueryResponse();
+
+            try
+            {
+                // Validar que hay esquema cargado
+                var currentSchema = _schemaLoaderService.GetCurrentSchema();
+                if (currentSchema == null)
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "No hay esquema de base de datos cargado. Por favor cargue un esquema primero en la sección de Configuración.";
+                    return Json(response);
+                }
+
+                // Validar que hay conexión configurada
+                var currentConnection = DatabaseController.GetCurrentConnection();
+                string? connStr = currentConnection?.ConnectionString;
+                
+                if (currentConnection == null)
+                {
+                    // Intentar obtener de sesión como fallback
+                    connStr = HttpContext.Session.GetString("ConnectionString");
+                    if (string.IsNullOrWhiteSpace(connStr))
+                    {
+                        response.Success = false;
+                        response.ErrorMessage = "No hay conexión configurada. Por favor configure la cadena de conexión en la sección de Configuración.";
+                        return Json(response);
+                    }
+                }
+
+                // Validar que Ollama está disponible
+                var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
+                if (!isOllamaAvailable)
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "Ollama no está disponible. Verifique que esté ejecutándose en http://localhost:11434";
+                    return Json(response);
+                }
+
+                // Generar SQL desde lenguaje natural
+                _logger.LogInformation($"Procesando consulta: {naturalLanguageQuery}");
+                var generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(naturalLanguageQuery, currentSchema);
+
+                response.GeneratedSQL = generatedSql;
+
+                // Validar que el SQL sea seguro (solo SELECT)
+                if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "La consulta generada no es válida o no es una consulta SELECT segura.";
+                    
+                    // Agregar al historial como fallida
+                    _queryHistory.Add(new QueryHistory
+                    {
+                        Timestamp = DateTime.Now,
+                        NaturalLanguageQuery = naturalLanguageQuery,
+                        GeneratedSQL = generatedSql,
+                        Success = false
+                    });
+
+                    return Json(response);
+                }
+
+                // Limpiar SQL
+                var cleanedSql = _sqlValidatorService.CleanSqlQuery(generatedSql);
+
+                // Obtener configuración de conexión
+                var connectionString = connStr ?? HttpContext.Session.GetString("ConnectionString");
+                var databaseType = currentConnection?.DatabaseType ?? currentSchema.DatabaseType;
+
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "No hay cadena de conexión configurada. Por favor configure la conexión primero.";
+                    return Json(response);
+                }
+
+                // Ejecutar consulta
+                _logger.LogInformation($"Ejecutando SQL: {cleanedSql}");
+                var results = await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType);
+
+                stopwatch.Stop();
+
+                response.Success = true;
+                response.Results = results;
+                response.RowCount = results.Count;
+                response.ExecutionTime = stopwatch.Elapsed;
+
+                // Agregar al historial
+                _queryHistory.Add(new QueryHistory
+                {
+                    Timestamp = DateTime.Now,
+                    NaturalLanguageQuery = naturalLanguageQuery,
+                    GeneratedSQL = cleanedSql,
+                    Success = true
+                });
+
+                _logger.LogInformation($"Consulta exitosa: {results.Count} filas retornadas");
+
+                return Json(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al ejecutar consulta");
+                
+                stopwatch.Stop();
+
+                response.Success = false;
+                response.ErrorMessage = ex.Message;
+                response.ExecutionTime = stopwatch.Elapsed;
+
+                // Agregar al historial como fallida
+                _queryHistory.Add(new QueryHistory
+                {
+                    Timestamp = DateTime.Now,
+                    NaturalLanguageQuery = naturalLanguageQuery,
+                    GeneratedSQL = response.GeneratedSQL,
+                    Success = false
+                });
+
+                return Json(response);
+            }
+        }
+
+        public IActionResult History()
+        {
+            return View(_queryHistory.OrderByDescending(q => q.Timestamp).ToList());
+        }
+
+        [HttpPost]
+        public IActionResult ClearHistory()
+        {
+            _queryHistory.Clear();
+            TempData["Success"] = "Historial limpiado exitosamente";
+            return RedirectToAction(nameof(Index));
+        }
+    }
+}

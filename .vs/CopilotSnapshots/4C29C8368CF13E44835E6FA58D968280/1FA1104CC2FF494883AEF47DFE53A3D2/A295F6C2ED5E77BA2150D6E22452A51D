@@ -1,0 +1,430 @@
+﻿@model QueryViewModel
+@{
+    ViewData["Title"] = "Consultas en Lenguaje Natural";
+}
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1>
+                <i class="bi bi-chat-left-text"></i> Consultas en Lenguaje Natural
+            </h1>
+            <div>
+                <form asp-controller="Query" asp-action="NewConversation" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-plus-circle"></i> Nueva Conversación
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        @if (Model.HasActiveConnection)
+        {
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle-fill"></i> 
+                <strong>Conectado a:</strong> @Model.DatabaseName 
+                <span class="badge bg-success ms-2">Listo para consultar</span>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle-fill"></i> 
+                <strong>No hay conexión activa.</strong> 
+                <a asp-controller="Database" asp-action="Index" class="alert-link">Configura tu base de datos primero</a>
+            </div>
+        }
+        
+        <p class="lead">Conversa con tu base de datos usando lenguaje natural. La IA recordará el contexto de tus preguntas anteriores.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-chat-dots"></i> Nueva Consulta</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="naturalLanguageQuery" class="form-label">Escribe tu pregunta:</label>
+                    <textarea class="form-control" id="naturalLanguageQuery" rows="3" 
+                              placeholder="Ejemplo: ¿Cuántos usuarios activos hay?" 
+                              @(!Model.HasActiveConnection ? "disabled" : "")></textarea>
+                    <div class="form-text">
+                        @if (Model.HasActiveConnection)
+                        {
+                            <span>Escribe tu consulta en lenguaje natural. La IA la convertirá en SQL, la ejecutará y te dará una respuesta clara.</span>
+                        }
+                        else
+                        {
+                            <span class="text-danger">Primero debes conectarte a una base de datos</span>
+                        }
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary btn-lg" id="executeQueryBtn" @(!Model.HasActiveConnection ? "disabled" : "")>
+                    <i class="bi bi-play-circle"></i> Ejecutar Consulta
+                </button>
+                <button type="button" class="btn btn-secondary btn-lg" id="clearBtn">
+                    <i class="bi bi-x-circle"></i> Limpiar
+                </button>
+                
+                <div id="loadingSpinner" class="d-none mt-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Procesando...</span>
+                    </div>
+                    <span class="ms-2">Generando consulta SQL con IA...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Área de Respuesta de la IA -->
+        <div id="aiResponseArea" class="d-none">
+            <div class="card mb-4 border-success">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-robot"></i> Respuesta de la IA</h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-light active" id="showAiBtn" onclick="toggleView('ai')">
+                            <i class="bi bi-chat-quote"></i> Respuesta Natural
+                        </button>
+                        <button type="button" class="btn btn-outline-light" id="showTableBtn" onclick="toggleView('table')">
+                            <i class="bi bi-table"></i> Tabla de Datos
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Vista de Respuesta Natural de la IA -->
+                    <div id="aiNaturalView" class="ai-response">
+                        <div id="aiNaturalResponse"></div>
+                    </div>
+
+                    <!-- Vista de Tabla de Datos -->
+                    <div id="tableDataView" class="d-none">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover table-sm" id="resultsTableMain">
+                                <thead class="table-dark" id="resultsTableHeadMain"></thead>
+                                <tbody id="resultsTableBodyMain"></tbody>
+                            </table>
+                        </div>
+                        <div class="alert alert-info mt-3" id="rowCountInfo">
+                            <!-- Se llenará dinámicamente -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Área de Detalles Técnicos (colapsable) -->
+        <div id="technicalDetailsArea" class="d-none">
+            <div class="accordion mb-4" id="technicalAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sqlDetails">
+                            <i class="bi bi-code-square me-2"></i> Detalles Técnicos (SQL Generado)
+                        </button>
+                    </h2>
+                    <div id="sqlDetails" class="accordion-collapse collapse" data-bs-parent="#technicalAccordion">
+                        <div class="accordion-body">
+                            <div class="code-block" id="generatedSql"></div>
+                            <div id="executionInfo" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Área de Error -->
+        <div id="errorArea" class="d-none">
+            <div class="alert alert-danger" role="alert">
+                <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Error</h5>
+                <p id="errorMessage"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.History.Any())
+{
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Historial de Conversación</h5>
+                    <form asp-controller="Query" asp-action="ClearHistory" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-light">
+                            <i class="bi bi-trash"></i> Limpiar
+                        </button>
+                    </form>
+                </div>
+                <div class="card-body">
+                    <div class="conversation-history">
+                        @foreach (var item in Model.History)
+                        {
+                            <div class="conversation-message mb-3 p-3 border rounded @(item.Success ? "border-success" : "border-danger")">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <div class="user-question">
+                                        <strong><i class="bi bi-person-circle"></i> Tú:</strong> @item.NaturalLanguageQuery
+                                    </div>
+                                    <small class="text-muted">@item.Timestamp.ToString("HH:mm:ss")</small>
+                                </div>
+                                @if (!string.IsNullOrEmpty(item.NaturalLanguageResponse))
+                                {
+                                    <div class="ai-response-history mt-2 p-2 bg-light rounded">
+                                        <strong><i class="bi bi-robot"></i> IA:</strong>
+                                        <div class="mt-1">@Html.Raw(item.NaturalLanguageResponse)</div>
+                                    </div>
+                                }
+                                <details class="mt-2">
+                                    <summary class="text-muted" style="cursor: pointer;"><small>Ver SQL generado</small></summary>
+                                    <code class="d-block mt-1 p-2 bg-dark text-white rounded">@item.GeneratedSQL</code>
+                                </details>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Styles {
+    <style>
+        .ai-response {
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+        
+        .ai-response table {
+            width: 100%;
+            margin: 1rem 0;
+        }
+        
+        .ai-response table th,
+        .ai-response table td {
+            padding: 0.5rem;
+            border: 1px solid #dee2e6;
+        }
+        
+        .ai-response table th {
+            background-color: #e9ecef;
+            font-weight: 600;
+        }
+        
+        .code-block {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+        }
+        
+        .conversation-history {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .conversation-message {
+            background-color: #f8f9fa;
+        }
+        
+        .ai-response-history {
+            white-space: pre-wrap;
+        }
+
+        /* Animación para el cambio de vista */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Estilos para los botones de toggle */
+        .btn-group .btn.active {
+            background-color: #fff;
+            color: #198754;
+            border-color: #fff;
+        }
+    </style>
+}
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        let currentResults = null;
+        let currentView = 'ai'; // 'ai' o 'table'
+
+        function toggleView(view) {
+            currentView = view;
+
+            const aiView = document.getElementById('aiNaturalView');
+            const tableView = document.getElementById('tableDataView');
+            const showAiBtn = document.getElementById('showAiBtn');
+            const showTableBtn = document.getElementById('showTableBtn');
+
+            if (view === 'ai') {
+                aiView.classList.remove('d-none');
+                aiView.classList.add('fade-in');
+                tableView.classList.add('d-none');
+                
+                showAiBtn.classList.add('active');
+                showAiBtn.classList.remove('btn-outline-light');
+                showAiBtn.classList.add('btn-light');
+                
+                showTableBtn.classList.remove('active');
+                showTableBtn.classList.add('btn-outline-light');
+                showTableBtn.classList.remove('btn-light');
+            } else {
+                tableView.classList.remove('d-none');
+                tableView.classList.add('fade-in');
+                aiView.classList.add('d-none');
+                
+                showTableBtn.classList.add('active');
+                showTableBtn.classList.remove('btn-outline-light');
+                showTableBtn.classList.add('btn-light');
+                
+                showAiBtn.classList.remove('active');
+                showAiBtn.classList.add('btn-outline-light');
+                showAiBtn.classList.remove('btn-light');
+            }
+        }
+
+        function renderDataTable(results, rowCount, executionTime) {
+            if (!results || results.length === 0) return;
+
+            const columns = Object.keys(results[0]);
+            
+            // Generar encabezados
+            let headerHtml = '<tr>';
+            columns.forEach(function(col) {
+                headerHtml += '<th>' + col + '</th>';
+            });
+            headerHtml += '</tr>';
+            document.getElementById('resultsTableHeadMain').innerHTML = headerHtml;
+
+            // Generar filas
+            let bodyHtml = '';
+            results.forEach(function(row) {
+                bodyHtml += '<tr>';
+                columns.forEach(function(col) {
+                    const value = row[col];
+                    if (value === null) {
+                        bodyHtml += '<td class="text-muted"><em>NULL</em></td>';
+                    } else {
+                        bodyHtml += '<td>' + value + '</td>';
+                    }
+                });
+                bodyHtml += '</tr>';
+            });
+            document.getElementById('resultsTableBodyMain').innerHTML = bodyHtml;
+
+            // Info de conteo
+            document.getElementById('rowCountInfo').innerHTML = 
+                '<i class="bi bi-info-circle"></i> ' +
+                '<strong>' + rowCount + '</strong> registros encontrados en ' +
+                '<strong>' + executionTime + '</strong>';
+        }
+
+        $(document).ready(function() {
+            $('#executeQueryBtn').click(function() {
+                const query = $('#naturalLanguageQuery').val().trim();
+                
+                if (!query) {
+                    alert('Por favor ingresa una consulta');
+                    return;
+                }
+
+                // Mostrar spinner
+                $('#loadingSpinner').removeClass('d-none');
+                $('#aiResponseArea').addClass('d-none');
+                $('#technicalDetailsArea').addClass('d-none');
+                $('#errorArea').addClass('d-none');
+                $(this).prop('disabled', true);
+
+                // Ejecutar consulta
+                $.ajax({
+                    url: '@Url.Action("Execute", "Query")',
+                    type: 'POST',
+                    data: { naturalLanguageQuery: query },
+                    success: function(response) {
+                        $('#loadingSpinner').addClass('d-none');
+                        $('#executeQueryBtn').prop('disabled', false);
+
+                        if (response.success) {
+                            // Guardar resultados
+                            currentResults = response.results;
+
+                            // MOSTRAR RESPUESTA EN LENGUAJE NATURAL DE LA IA
+                            if (response.naturalLanguageResponse) {
+                                const htmlResponse = marked.parse(response.naturalLanguageResponse);
+                                $('#aiNaturalResponse').html(htmlResponse);
+                            }
+
+                            // RENDERIZAR TABLA DE DATOS
+                            if (response.results && response.results.length > 0) {
+                                renderDataTable(response.results, response.rowCount, response.executionTime);
+                            }
+
+                            // Mostrar área de respuesta
+                            $('#aiResponseArea').removeClass('d-none');
+
+                            // Restablecer a vista de IA por defecto
+                            toggleView('ai');
+
+                            // Mostrar detalles técnicos
+                            $('#generatedSql').text(response.generatedSQL);
+                            $('#executionInfo').html(
+                                '<small class="text-muted">' +
+                                '<i class="bi bi-check-circle text-success"></i> ' +
+                                'Ejecutado en <strong>' + response.executionTime + '</strong> - ' +
+                                '<strong>' + response.rowCount + '</strong> filas' +
+                                '</small>'
+                            );
+
+                            $('#technicalDetailsArea').removeClass('d-none');
+                        } else {
+                            // Mostrar error
+                            let errorHtml = '<strong>' + response.errorMessage + '</strong>';
+                            if (response.naturalLanguageResponse) {
+                                errorHtml += '<hr>' + marked.parse(response.naturalLanguageResponse);
+                            }
+                            $('#errorMessage').html(errorHtml);
+                            $('#errorArea').removeClass('d-none');
+                        }
+
+                        // Recargar página después de 5 segundos para actualizar historial
+                        setTimeout(function() {
+                            location.reload();
+                        }, 5000);
+                    },
+                    error: function(xhr, status, error) {
+                        $('#loadingSpinner').addClass('d-none');
+                        $('#executeQueryBtn').prop('disabled', false);
+                        
+                        $('#errorMessage').html('<strong>Error de comunicación:</strong> ' + error);
+                        $('#errorArea').removeClass('d-none');
+                    }
+                });
+            });
+
+            $('#clearBtn').click(function() {
+                $('#naturalLanguageQuery').val('');
+                $('#aiResponseArea').addClass('d-none');
+                $('#technicalDetailsArea').addClass('d-none');
+                $('#errorArea').addClass('d-none');
+            });
+
+            // Permitir ejecutar con Enter
+            $('#naturalLanguageQuery').keydown(function(e) {
+                if (e.key === 'Enter' && !e.ctrlKey) {
+                    e.preventDefault();
+                    if (!$(this).prop('disabled')) {
+                        $('#executeQueryBtn').click();
+                    }
+                }
+            });
+        });
+    </script>
+}

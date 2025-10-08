@@ -1,0 +1,318 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Dapper;
+using Microsoft.Data.SqlClient;
+using Npgsql;
+using System.Data;
+using System.Text.Json;
+
+namespace AIAssistantSQL.Services
+{
+    /// <summary>
+    /// Servicio para cargar esquemas de bases de datos
+    /// </summary>
+    public class SchemaLoaderService : ISchemaLoaderService
+    {
+        private DatabaseSchema? _currentSchema;
+        private readonly ILogger<SchemaLoaderService> _logger;
+
+        public SchemaLoaderService(ILogger<SchemaLoaderService> logger)
+        {
+            _logger = logger;
+        }
+
+        public async Task<DatabaseSchema> LoadSchemaFromFileAsync(string filePath)
+        {
+            try
+            {
+                _logger.LogInformation($"Cargando esquema desde archivo: {filePath}");
+
+                if (!File.Exists(filePath))
+                {
+                    throw new FileNotFoundException($"El archivo {filePath} no existe");
+                }
+
+                var json = await File.ReadAllTextAsync(filePath);
+                var schema = JsonSerializer.Deserialize<DatabaseSchema>(json);
+
+                if (schema == null)
+                {
+                    throw new InvalidOperationException("No se pudo deserializar el esquema");
+                }
+
+                schema.LoadedAt = DateTime.Now;
+                _currentSchema = schema;
+
+                _logger.LogInformation($"Esquema cargado exitosamente: {schema.Tables.Count} tablas");
+
+                return schema;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cargar esquema desde archivo");
+                throw;
+            }
+        }
+
+        public async Task<DatabaseSchema> LoadSchemaFromConnectionStringAsync(string connectionString, DatabaseType databaseType)
+        {
+            try
+            {
+                _logger.LogInformation($"Cargando esquema desde base de datos: {databaseType}");
+
+                DatabaseSchema schema = databaseType switch
+                {
+                    DatabaseType.SqlServer => await LoadSqlServerSchemaAsync(connectionString),
+                    DatabaseType.PostgreSQL => await LoadPostgreSQLSchemaAsync(connectionString),
+                    _ => throw new NotSupportedException($"Tipo de base de datos no soportado: {databaseType}")
+                };
+
+                schema.LoadedAt = DateTime.Now;
+                _currentSchema = schema;
+
+                _logger.LogInformation($"Esquema cargado exitosamente: {schema.Tables.Count} tablas");
+
+                return schema;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cargar esquema desde base de datos");
+                throw;
+            }
+        }
+
+        public async Task SaveSchemaToFileAsync(DatabaseSchema schema, string filePath)
+        {
+            try
+            {
+                _logger.LogInformation($"Guardando esquema en archivo: {filePath}");
+
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                };
+
+                var json = JsonSerializer.Serialize(schema, options);
+                await File.WriteAllTextAsync(filePath, json);
+
+                _logger.LogInformation("Esquema guardado exitosamente");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al guardar esquema en archivo");
+                throw;
+            }
+        }
+
+        public DatabaseSchema? GetCurrentSchema()
+        {
+            return _currentSchema;
+        }
+
+        public void SetCurrentSchema(DatabaseSchema schema)
+        {
+            _currentSchema = schema;
+        }
+
+        private async Task<DatabaseSchema> LoadSqlServerSchemaAsync(string connectionString)
+        {
+            using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+
+            var databaseName = connection.Database;
+            var schema = new DatabaseSchema
+            {
+                DatabaseName = databaseName,
+                DatabaseType = DatabaseType.SqlServer
+            };
+
+            // Obtener todas las tablas
+            var tables = await connection.QueryAsync<string>(@"
+                SELECT TABLE_NAME 
+                FROM INFORMATION_SCHEMA.TABLES 
+                WHERE TABLE_TYPE = 'BASE TABLE' 
+                AND TABLE_SCHEMA = 'dbo'
+                ORDER BY TABLE_NAME");
+
+            foreach (var tableName in tables)
+            {
+                var tableSchema = new TableSchema { TableName = tableName };
+
+                // Obtener columnas
+                var columns = await connection.QueryAsync(@"
+                    SELECT 
+                        c.COLUMN_NAME,
+                        c.DATA_TYPE,
+                        c.IS_NULLABLE,
+                        c.CHARACTER_MAXIMUM_LENGTH,
+                        COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity') as IS_IDENTITY
+                    FROM INFORMATION_SCHEMA.COLUMNS c
+                    WHERE c.TABLE_NAME = @TableName
+                    ORDER BY c.ORDINAL_POSITION",
+                    new { TableName = tableName });
+
+                foreach (dynamic col in columns)
+                {
+                    tableSchema.Columns.Add(new ColumnSchema
+                    {
+                        ColumnName = col.COLUMN_NAME,
+                        DataType = col.DATA_TYPE,
+                        IsNullable = col.IS_NULLABLE == "YES",
+                        MaxLength = col.CHARACTER_MAXIMUM_LENGTH,
+                        IsIdentity = col.IS_IDENTITY == 1
+                    });
+                }
+
+                // Obtener primary keys
+                var primaryKeys = await connection.QueryAsync<string>(@"
+                    SELECT COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                    WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + CONSTRAINT_NAME), 'IsPrimaryKey') = 1
+                    AND TABLE_NAME = @TableName",
+                    new { TableName = tableName });
+
+                tableSchema.PrimaryKeys = primaryKeys.ToList();
+
+                // Obtener foreign keys
+                var foreignKeys = await connection.QueryAsync(@"
+                    SELECT 
+                        fk.name AS FK_NAME,
+                        COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS COLUMN_NAME,
+                        OBJECT_NAME(fkc.referenced_object_id) AS REFERENCED_TABLE,
+                        COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS REFERENCED_COLUMN
+                    FROM sys.foreign_keys fk
+                    INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                    WHERE OBJECT_NAME(fkc.parent_object_id) = @TableName",
+                    new { TableName = tableName });
+
+                foreach (dynamic fk in foreignKeys)
+                {
+                    tableSchema.ForeignKeys.Add(new ForeignKeySchema
+                    {
+                        ColumnName = fk.COLUMN_NAME,
+                        ReferencedTable = fk.REFERENCED_TABLE,
+                        ReferencedColumn = fk.REFERENCED_COLUMN
+                    });
+                }
+
+                schema.Tables.Add(tableSchema);
+            }
+
+            return schema;
+        }
+
+        private async Task<DatabaseSchema> LoadPostgreSQLSchemaAsync(string connectionString)
+        {
+            using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+
+            var databaseName = connection.Database;
+            var schema = new DatabaseSchema
+            {
+                DatabaseName = databaseName,
+                DatabaseType = DatabaseType.PostgreSQL
+            };
+
+            // Obtener todas las tablas
+            var tables = await connection.QueryAsync<string>(@"
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_type = 'BASE TABLE'
+                ORDER BY table_name");
+
+            foreach (var tableName in tables)
+            {
+                try
+                {
+                    var tableSchema = new TableSchema { TableName = tableName };
+
+                    // Obtener columnas
+                    var columns = await connection.QueryAsync(@"
+                        SELECT 
+                            column_name,
+                            data_type,
+                            is_nullable,
+                            character_maximum_length,
+                            CASE WHEN column_default LIKE 'nextval%' THEN true ELSE false END as is_identity
+                        FROM information_schema.columns
+                        WHERE table_name = @TableName
+                        AND table_schema = 'public'
+                        ORDER BY ordinal_position",
+                        new { TableName = tableName });
+
+                    foreach (dynamic col in columns)
+                    {
+                        tableSchema.Columns.Add(new ColumnSchema
+                        {
+                            ColumnName = col.column_name,
+                            DataType = col.data_type,
+                            IsNullable = col.is_nullable == "YES",
+                            MaxLength = col.character_maximum_length,
+                            IsIdentity = col.is_identity
+                        });
+                    }
+
+                    // Obtener primary keys - CORREGIDO para evitar errores con ::regclass
+                    var primaryKeys = await connection.QueryAsync<string>(@"
+                        SELECT kcu.column_name
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage kcu
+                            ON tc.constraint_name = kcu.constraint_name
+                            AND tc.table_schema = kcu.table_schema
+                        WHERE tc.constraint_type = 'PRIMARY KEY'
+                        AND tc.table_schema = 'public'
+                        AND tc.table_name = @TableName",
+                        new { TableName = tableName });
+
+                    tableSchema.PrimaryKeys = primaryKeys.ToList();
+
+                    // Obtener foreign keys
+                    var foreignKeys = await connection.QueryAsync(@"
+                        SELECT
+                            kcu.column_name,
+                            ccu.table_name AS referenced_table,
+                            ccu.column_name AS referenced_column
+                        FROM information_schema.table_constraints AS tc
+                        JOIN information_schema.key_column_usage AS kcu
+                            ON tc.constraint_name = kcu.constraint_name
+                            AND tc.table_schema = kcu.table_schema
+                        JOIN information_schema.constraint_column_usage AS ccu
+                            ON ccu.constraint_name = tc.constraint_name
+                            AND ccu.table_schema = tc.table_schema
+                        WHERE tc.constraint_type = 'FOREIGN KEY'
+                        AND tc.table_schema = 'public'
+                        AND tc.table_name = @TableName",
+                        new { TableName = tableName });
+
+                    foreach (dynamic fk in foreignKeys)
+                    {
+                        tableSchema.ForeignKeys.Add(new ForeignKeySchema
+                        {
+                            ColumnName = fk.column_name,
+                            ReferencedTable = fk.referenced_table,
+                            ReferencedColumn = fk.referenced_column
+                        });
+                    }
+
+                    schema.Tables.Add(tableSchema);
+                    
+                    _logger.LogInformation($"✅ Tabla '{tableName}' cargada exitosamente");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, $"⚠️ Error cargando tabla '{tableName}', se omitirá: {ex.Message}");
+                    // Continuar con la siguiente tabla
+                    continue;
+                }
+            }
+
+            if (!schema.Tables.Any())
+            {
+                throw new InvalidOperationException("No se pudieron cargar tablas del esquema. Verifica que existan tablas en el schema 'public'.");
+            }
+
+            return schema;
+        }
+    }
+}

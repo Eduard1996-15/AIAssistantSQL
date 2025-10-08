@@ -1,0 +1,236 @@
+{
+  "DatabaseName": "EjemploTienda",
+  "DatabaseType": 0,
+  "Tables": [
+    {
+      "TableName": "Productos",
+      "Columns": [
+        {
+          "ColumnName": "ProductoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 100,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Precio",
+          "DataType": "decimal",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "CategoriaId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Stock",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "ProductoId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "CategoriaId",
+          "ReferencedTable": "Categorias",
+          "ReferencedColumn": "CategoriaId"
+        }
+      ]
+    },
+    {
+      "TableName": "Categorias",
+      "Columns": [
+        {
+          "ColumnName": "CategoriaId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 50,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Descripcion",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 200,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "CategoriaId"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Clientes",
+      "Columns": [
+        {
+          "ColumnName": "ClienteId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 100,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Email",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 100,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Telefono",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaRegistro",
+          "DataType": "datetime",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "ClienteId"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Ventas",
+      "Columns": [
+        {
+          "ColumnName": "VentaId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "ClienteId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaVenta",
+          "DataType": "datetime",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Total",
+          "DataType": "decimal",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "VentaId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "ClienteId",
+          "ReferencedTable": "Clientes",
+          "ReferencedColumn": "ClienteId"
+        }
+      ]
+    },
+    {
+      "TableName": "DetalleVentas",
+      "Columns": [
+        {
+          "ColumnName": "DetalleId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "VentaId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "ProductoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Cantidad",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "PrecioUnitario",
+          "DataType": "decimal",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Subtotal",
+          "DataType": "decimal",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "DetalleId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "VentaId",
+          "ReferencedTable": "Ventas",
+          "ReferencedColumn": "VentaId"
+        },
+        {
+          "ColumnName": "ProductoId",
+          "ReferencedTable": "Productos",
+          "ReferencedColumn": "ProductoId"
+        }
+      ]
+    }
+  ],
+  "LoadedAt": "2024-01-15T10:30:00"
+}

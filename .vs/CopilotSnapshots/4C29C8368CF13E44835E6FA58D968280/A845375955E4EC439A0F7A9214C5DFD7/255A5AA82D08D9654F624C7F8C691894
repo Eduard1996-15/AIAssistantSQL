@@ -1,0 +1,46 @@
+﻿using AIAssistantSQL.Models;
+
+namespace AIAssistantSQL.Interfaces
+{
+    /// <summary>
+    /// Interfaz común para servicios de IA (Ollama y Google AI)
+    /// </summary>
+    public interface IAIService
+    {
+        /// <summary>
+        /// Verifica si el servicio de IA está disponible
+        /// </summary>
+        Task<bool> IsAvailableAsync();
+
+        /// <summary>
+        /// Obtiene el modelo actual en uso
+        /// </summary>
+        string GetCurrentModel();
+
+        /// <summary>
+        /// Cambia el modelo de IA
+        /// </summary>
+        void SetModel(string modelName);
+
+        /// <summary>
+        /// Obtiene la lista de modelos disponibles
+        /// </summary>
+        Task<List<OllamaModel>> GetAvailableModelsAsync();
+
+        /// <summary>
+        /// Genera una consulta SQL desde lenguaje natural
+        /// </summary>
+        Task<string> GenerateSQLFromNaturalLanguageAsync(
+            string naturalLanguageQuery,
+            DatabaseSchema schema);
+
+        /// <summary>
+        /// Interpreta los resultados de una consulta SQL
+        /// </summary>
+        Task<string> InterpretQueryResultsAsync(
+            string originalQuestion,
+            string executedSql,
+            List<Dictionary<string, object>> results,
+            List<string> conversationHistory = null);
+    }
+}

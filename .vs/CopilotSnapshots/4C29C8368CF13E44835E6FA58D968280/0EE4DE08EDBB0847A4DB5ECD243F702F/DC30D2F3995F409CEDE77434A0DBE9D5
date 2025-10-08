@@ -1,0 +1,20 @@
+﻿using AIAssistantSQL.Models;
+
+namespace AIAssistantSQL.Interfaces
+{
+    /// <summary>
+    /// Interfaz para validar consultas SQL
+    /// </summary>
+    public interface ISqlValidatorService
+    {
+        /// <summary>
+        /// Valida que una consulta SQL sea segura (solo SELECT)
+        /// </summary>
+        bool IsValidSelectQuery(string sql);
+
+        /// <summary>
+        /// Limpia y formatea una consulta SQL
+        /// </summary>
+        string CleanSqlQuery(string sql);
+    }
+}

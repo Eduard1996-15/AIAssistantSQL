@@ -1,0 +1,827 @@
+{
+  "DatabaseName": "BD_SCU",
+  "DatabaseType": 0,
+  "Tables": [
+    {
+      "TableName": "AccesoNivel",
+      "Columns": [
+        {
+          "ColumnName": "RolId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UnitId",
+          "DataType": "varchar",
+          "IsNullable": false,
+          "MaxLength": 20,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "RolId",
+        "UnitId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "UnitId",
+          "ReferencedTable": "Nivel_Organizacional",
+          "ReferencedColumn": "UnitId"
+        },
+        {
+          "ColumnName": "RolId",
+          "ReferencedTable": "Roles",
+          "ReferencedColumn": "RolId"
+        }
+      ]
+    },
+    {
+      "TableName": "DOCUMENTO",
+      "Columns": [
+        {
+          "ColumnName": "DocumentoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "titulo",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Doc_responsable",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 15,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "grado_responsable",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "fecha_creacion",
+          "DataType": "datetime",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "fecha_aprobacion",
+          "DataType": "datetime",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "version",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nivel",
+          "DataType": "varchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "DocumentoId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "Nivel",
+          "ReferencedTable": "Subnivel",
+          "ReferencedColumn": "SubnivelId"
+        }
+      ]
+    },
+    {
+      "TableName": "DOCUMENTO_REVISION",
+      "Columns": [
+        {
+          "ColumnName": "RevisionId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "DocumentoOriginalId",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "titulo",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Doc_responsable",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 15,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "grado_responsable",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "fecha_creacion",
+          "DataType": "datetime",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "fecha_ultima_modificacion",
+          "DataType": "datetime",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "estado_revision",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 30,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nivel",
+          "DataType": "varchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nota",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 500,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "RevisionId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "DocumentoOriginalId",
+          "ReferencedTable": "DOCUMENTO",
+          "ReferencedColumn": "DocumentoId"
+        },
+        {
+          "ColumnName": "Nivel",
+          "ReferencedTable": "Subnivel",
+          "ReferencedColumn": "SubnivelId"
+        }
+      ]
+    },
+    {
+      "TableName": "lineas_documento",
+      "Columns": [
+        {
+          "ColumnName": "LineaId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "DocumentoId",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "RevisionId",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "cedula",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 8,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Grado",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 200,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "nombre",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 200,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Email",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "telefono",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 15,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "subnivel",
+          "DataType": "varchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "permanece_unidad",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 2,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "sail",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 30,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "guardian",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 30,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "i2",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 30,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Departamento",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 200,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "egonext",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 30,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "LineaId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "DocumentoId",
+          "ReferencedTable": "DOCUMENTO",
+          "ReferencedColumn": "DocumentoId"
+        },
+        {
+          "ColumnName": "RevisionId",
+          "ReferencedTable": "DOCUMENTO_REVISION",
+          "ReferencedColumn": "RevisionId"
+        },
+        {
+          "ColumnName": "subnivel",
+          "ReferencedTable": "Subnivel",
+          "ReferencedColumn": "SubnivelId"
+        }
+      ]
+    },
+    {
+      "TableName": "Logs",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "TableName",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "PrimaryKeyColumn",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "PrimaryKeyValue",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "ColumnName",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "OldValue",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "NewValue",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Action",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 50,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Timestamp",
+          "DataType": "datetime2",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UserId",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "tablaCompleta",
+          "DataType": "text",
+          "IsNullable": true,
+          "MaxLength": 2147483647,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Nivel_Organizacional",
+      "Columns": [
+        {
+          "ColumnName": "UnitId",
+          "DataType": "varchar",
+          "IsNullable": false,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nombre",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 100,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "UnitId"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Notificacion",
+      "Columns": [
+        {
+          "ColumnName": "IdNotificacion",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "IdRol",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Mensaje",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaCreacion",
+          "DataType": "datetime",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Leida",
+          "DataType": "bit",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "IdNotificacion"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "IdRol",
+          "ReferencedTable": "Roles",
+          "ReferencedColumn": "RolId"
+        }
+      ]
+    },
+    {
+      "TableName": "Roles",
+      "Columns": [
+        {
+          "ColumnName": "RolId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "NombreRol",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 50,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "RolId"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Roles_usuario",
+      "Columns": [
+        {
+          "ColumnName": "UsuarioId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "RolId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaAsignacion",
+          "DataType": "date",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "RolId",
+        "UsuarioId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "RolId",
+          "ReferencedTable": "Roles",
+          "ReferencedColumn": "RolId"
+        },
+        {
+          "ColumnName": "UsuarioId",
+          "ReferencedTable": "Usuario",
+          "ReferencedColumn": "UsuarioId"
+        }
+      ]
+    },
+    {
+      "TableName": "SecurityLogs",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Timestamp",
+          "DataType": "datetime",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "IpAddress",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 50,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "AttackType",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 100,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "RequestPath",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 500,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "RequestMethod",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 10,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UserAgent",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 500,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "RequestData",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 4000,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "ReferenceCode",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 50,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UserId",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 50,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Username",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 100,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Subnivel",
+      "Columns": [
+        {
+          "ColumnName": "SubnivelId",
+          "DataType": "varchar",
+          "IsNullable": false,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UnitId",
+          "DataType": "varchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nombre",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 100,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "SubnivelId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "UnitId",
+          "ReferencedTable": "Nivel_Organizacional",
+          "ReferencedColumn": "UnitId"
+        }
+      ]
+    },
+    {
+      "TableName": "user_password",
+      "Columns": [
+        {
+          "ColumnName": "user_passwordId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "UsuarioId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "password",
+          "DataType": "nvarchar",
+          "IsNullable": true,
+          "MaxLength": 30,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "fecha",
+          "DataType": "datetime",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "user_passwordId",
+        "UsuarioId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "UsuarioId",
+          "ReferencedTable": "Usuario",
+          "ReferencedColumn": "UsuarioId"
+        }
+      ]
+    },
+    {
+      "TableName": "Usuario",
+      "Columns": [
+        {
+          "ColumnName": "UsuarioId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Grado",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UserName",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaCreacion",
+          "DataType": "date",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Name",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 200,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Email",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 255,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "PhoneNumber",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 15,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nivel",
+          "DataType": "varchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "activo",
+          "DataType": "bit",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "documento",
+          "DataType": "char",
+          "IsNullable": true,
+          "MaxLength": 15,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Aprobado",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "SubNivel",
+          "DataType": "varchar",
+          "IsNullable": true,
+          "MaxLength": 20,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "UsuarioId"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "Nivel",
+          "ReferencedTable": "Nivel_Organizacional",
+          "ReferencedColumn": "UnitId"
+        },
+        {
+          "ColumnName": "SubNivel",
+          "ReferencedTable": "Subnivel",
+          "ReferencedColumn": "SubnivelId"
+        }
+      ]
+    }
+  ],
+  "LoadedAt": "2025-10-04T22:52:27.7057704-03:00"
+}

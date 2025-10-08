@@ -1,0 +1,244 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class DatabaseController : Controller
+    {
+        private readonly ISchemaLoaderService _schemaLoaderService;
+        private readonly IQueryRepository _queryRepository;
+        private readonly ILogger<DatabaseController> _logger;
+        private readonly IConfiguration _configuration;
+
+        // Guardar la configuración de conexión en memoria (en producción usar BD o caché distribuido)
+        private static DatabaseConnectionConfig? _currentConnection;
+
+        public DatabaseController(
+            ISchemaLoaderService schemaLoaderService,
+            IQueryRepository queryRepository,
+            ILogger<DatabaseController> logger,
+            IConfiguration configuration)
+        {
+            _schemaLoaderService = schemaLoaderService;
+            _queryRepository = queryRepository;
+            _logger = logger;
+            _configuration = configuration;
+        }
+
+        public IActionResult Index()
+        {
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+
+            var viewModel = new DatabaseConfigViewModel
+            {
+                IsSchemaLoaded = currentSchema != null,
+                LoadedDatabaseName = currentSchema?.DatabaseName,
+                LoadedAt = currentSchema?.LoadedAt,
+                TableCount = currentSchema?.Tables.Count ?? 0,
+                DatabaseType = currentSchema?.DatabaseType ?? DatabaseType.SqlServer,
+                IsConnected = _currentConnection != null,
+                CurrentConnectionString = _currentConnection?.ConnectionString
+            };
+
+            return View(viewModel);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> LoadFromFile(IFormFile schemaFile)
+        {
+            try
+            {
+                if (schemaFile == null || schemaFile.Length == 0)
+                {
+                    TempData["Error"] = "Por favor seleccione un archivo válido";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                // Guardar archivo temporalmente
+                var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+                Directory.CreateDirectory(uploadsFolder);
+
+                var filePath = Path.Combine(uploadsFolder, schemaFile.FileName);
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await schemaFile.CopyToAsync(stream);
+                }
+
+                // Cargar esquema
+                var schema = await _schemaLoaderService.LoadSchemaFromFileAsync(filePath);
+
+                TempData["Success"] = $"Esquema cargado exitosamente: {schema.DatabaseName} - {schema.Tables.Count} tablas";
+                TempData["Warning"] = "Recuerda configurar la cadena de conexión para poder ejecutar consultas";
+                
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cargar esquema desde archivo");
+                TempData["Error"] = $"Error al cargar esquema: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ConnectAndLoadSchema(string connectionString, DatabaseType databaseType)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    TempData["Error"] = "Por favor ingrese una cadena de conexión válida";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                _logger.LogInformation($"Intentando conectar a {databaseType}...");
+
+                // Probar conexión primero
+                var isConnected = await _queryRepository.TestConnectionAsync(connectionString, databaseType);
+                if (!isConnected)
+                {
+                    TempData["Error"] = "No se pudo conectar a la base de datos. Verifique la cadena de conexión";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                _logger.LogInformation("Conexión exitosa, extrayendo esquema...");
+
+                // Cargar esquema
+                var schema = await _schemaLoaderService.LoadSchemaFromConnectionStringAsync(connectionString, databaseType);
+
+                // Guardar la configuración de conexión
+                _currentConnection = new DatabaseConnectionConfig
+                {
+                    ConnectionString = connectionString,
+                    DatabaseType = databaseType,
+                    DatabaseName = schema.DatabaseName
+                };
+
+                // También guardar en sesión como fallback
+                HttpContext.Session.SetString("ConnectionString", connectionString);
+                HttpContext.Session.SetString("DatabaseType", databaseType.ToString());
+                HttpContext.Session.SetString("DatabaseName", schema.DatabaseName);
+
+                _logger.LogInformation($"Esquema cargado: {schema.Tables.Count} tablas encontradas");
+
+                TempData["Success"] = $"✅ Conectado exitosamente a: {schema.DatabaseName}<br/>📊 {schema.Tables.Count} tablas cargadas<br/>🚀 Ya puedes hacer consultas!";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al conectar y cargar esquema");
+                TempData["Error"] = $"❌ Error: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        [HttpPost]
+        public IActionResult SetConnectionString(string connectionString, DatabaseType databaseType)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    TempData["Error"] = "Por favor ingrese una cadena de conexión válida";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                var currentSchema = _schemaLoaderService.GetCurrentSchema();
+                if (currentSchema == null)
+                {
+                    TempData["Error"] = "Primero debe cargar el esquema de la base de datos";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                // Guardar la configuración de conexión
+                _currentConnection = new DatabaseConnectionConfig
+                {
+                    ConnectionString = connectionString,
+                    DatabaseType = databaseType,
+                    DatabaseName = currentSchema.DatabaseName
+                };
+
+                HttpContext.Session.SetString("ConnectionString", connectionString);
+                HttpContext.Session.SetString("DatabaseType", databaseType.ToString());
+
+                TempData["Success"] = "Cadena de conexión configurada correctamente. Ya puedes ejecutar consultas.";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al configurar cadena de conexión");
+                TempData["Error"] = $"Error: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> SaveSchemaToFile(string fileName)
+        {
+            try
+            {
+                var currentSchema = _schemaLoaderService.GetCurrentSchema();
+                if (currentSchema == null)
+                {
+                    TempData["Error"] = "No hay esquema cargado para guardar";
+                    return RedirectToAction(nameof(Index));
+                }
+
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    fileName = $"{currentSchema.DatabaseName}_schema.json";
+                }
+
+                if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileName += ".json";
+                }
+
+                var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+                Directory.CreateDirectory(uploadsFolder);
+
+                var filePath = Path.Combine(uploadsFolder, fileName);
+                await _schemaLoaderService.SaveSchemaToFileAsync(currentSchema, filePath);
+
+                TempData["Success"] = $"Esquema guardado exitosamente: {fileName}<br/>Ubicación: wwwroot/uploads/{fileName}";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al guardar esquema");
+                TempData["Error"] = $"Error al guardar esquema: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        [HttpPost]
+        public IActionResult Disconnect()
+        {
+            _currentConnection = null;
+            HttpContext.Session.Remove("ConnectionString");
+            HttpContext.Session.Remove("DatabaseType");
+            HttpContext.Session.Remove("DatabaseName");
+
+            TempData["Success"] = "Desconectado exitosamente";
+            return RedirectToAction(nameof(Index));
+        }
+
+        public IActionResult ViewSchema()
+        {
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+            if (currentSchema == null)
+            {
+                TempData["Error"] = "No hay esquema cargado";
+                return RedirectToAction(nameof(Index));
+            }
+
+            return View(currentSchema);
+        }
+
+        public static DatabaseConnectionConfig? GetCurrentConnection()
+        {
+            return _currentConnection;
+        }
+    }
+}

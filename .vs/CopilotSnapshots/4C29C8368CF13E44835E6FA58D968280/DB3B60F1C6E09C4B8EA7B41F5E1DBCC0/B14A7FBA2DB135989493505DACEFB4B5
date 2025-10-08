@@ -1,0 +1,160 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using OllamaSharp;
+using System.Text;
+
+namespace AIAssistantSQL.Services
+{
+    /// <summary>
+    /// Servicio para interactuar con Ollama y generar consultas SQL
+    /// </summary>
+    public class OllamaService : IOllamaService
+    {
+        private readonly OllamaApiClient _ollamaClient;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<OllamaService> _logger;
+
+        public OllamaService(IConfiguration configuration, ILogger<OllamaService> logger)
+        {
+            _configuration = configuration;
+            _logger = logger;
+            
+            var ollamaUrl = _configuration["Ollama:Url"] ?? "http://localhost:11434";
+            _ollamaClient = new OllamaApiClient(ollamaUrl);
+        }
+
+        public async Task<string> GenerateSQLFromNaturalLanguageAsync(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            try
+            {
+                var prompt = BuildPrompt(naturalLanguageQuery, schema);
+                var model = _configuration["Ollama:Model"] ?? "llama2";
+
+                _logger.LogInformation($"Enviando consulta a Ollama con modelo: {model}");
+
+                var chat = new Chat(_ollamaClient, _ => { });
+                var response = await chat.Send(prompt, model);
+
+                // Extraer solo el SQL del response
+                var sql = ExtractSqlFromResponse(response);
+
+                _logger.LogInformation($"SQL generado: {sql}");
+
+                return sql;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al generar SQL desde Ollama");
+                throw new Exception("Error al comunicarse con Ollama: " + ex.Message, ex);
+            }
+        }
+
+        public async Task<bool> IsAvailableAsync()
+        {
+            try
+            {
+                var models = await _ollamaClient.ListLocalModels();
+                return models != null && models.Any();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ollama no está disponible");
+                return false;
+            }
+        }
+
+        private string BuildPrompt(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            var sb = new StringBuilder();
+            
+            sb.AppendLine("You are a SQL expert. Generate ONLY a SQL SELECT query based on the user's natural language request.");
+            sb.AppendLine("IMPORTANT: Return ONLY the SQL query without any explanations, markdown, or additional text.");
+            sb.AppendLine();
+            sb.AppendLine($"Database Type: {schema.DatabaseType}");
+            sb.AppendLine($"Database Name: {schema.DatabaseName}");
+            sb.AppendLine();
+            sb.AppendLine("Database Schema:");
+            
+            foreach (var table in schema.Tables)
+            {
+                sb.AppendLine($"\nTable: {table.TableName}");
+                sb.AppendLine("Columns:");
+                
+                foreach (var column in table.Columns)
+                {
+                    var nullable = column.IsNullable ? "NULL" : "NOT NULL";
+                    var identity = column.IsIdentity ? " (IDENTITY)" : "";
+                    sb.AppendLine($"  - {column.ColumnName} ({column.DataType}{(column.MaxLength.HasValue ? $"({column.MaxLength})" : "")}) {nullable}{identity}");
+                }
+                
+                if (table.PrimaryKeys.Any())
+                {
+                    sb.AppendLine($"Primary Key: {string.Join(", ", table.PrimaryKeys)}");
+                }
+                
+                if (table.ForeignKeys.Any())
+                {
+                    sb.AppendLine("Foreign Keys:");
+                    foreach (var fk in table.ForeignKeys)
+                    {
+                        sb.AppendLine($"  - {fk.ColumnName} -> {fk.ReferencedTable}.{fk.ReferencedColumn}");
+                    }
+                }
+            }
+            
+            sb.AppendLine();
+            sb.AppendLine($"User Request: {naturalLanguageQuery}");
+            sb.AppendLine();
+            sb.AppendLine("Generate the SQL SELECT query:");
+            
+            return sb.ToString();
+        }
+
+        private string ExtractSqlFromResponse(string response)
+        {
+            // Limpiar markdown code blocks si existen
+            var sql = response.Trim();
+            
+            // Remover ```sql o ``` al inicio
+            if (sql.StartsWith("```sql", StringComparison.OrdinalIgnoreCase))
+            {
+                sql = sql.Substring(6).Trim();
+            }
+            else if (sql.StartsWith("```"))
+            {
+                sql = sql.Substring(3).Trim();
+            }
+            
+            // Remover ``` al final
+            if (sql.EndsWith("```"))
+            {
+                sql = sql.Substring(0, sql.Length - 3).Trim();
+            }
+            
+            // Tomar solo la primera sentencia SQL si hay múltiples líneas de explicación
+            var lines = sql.Split('\n');
+            var sqlLines = new List<string>();
+            
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedLine))
+                    continue;
+                    
+                // Si la línea parece ser SQL (empieza con SELECT, WITH, etc.)
+                if (trimmedLine.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+                    trimmedLine.StartsWith("WITH", StringComparison.OrdinalIgnoreCase) ||
+                    sqlLines.Any())
+                {
+                    sqlLines.Add(trimmedLine);
+                    
+                    // Si termina con ; es el final de la query
+                    if (trimmedLine.EndsWith(";"))
+                        break;
+                }
+            }
+            
+            return sqlLines.Any() ? string.Join(" ", sqlLines) : sql;
+        }
+    }
+}

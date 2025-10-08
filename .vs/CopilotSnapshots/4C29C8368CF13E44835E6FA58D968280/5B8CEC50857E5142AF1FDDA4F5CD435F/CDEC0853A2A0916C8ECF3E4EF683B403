@@ -1,0 +1,24 @@
+﻿{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "Ollama": {
+    "Url": "http://localhost:11434",
+    "Model": "codellama"
+  },
+  "GoogleAI": {
+    "ApiKey": "",
+    "Model": "gemini-1.5-flash",
+    "Enabled": false
+  },
+  "AI": {
+    "Provider": "Ollama"
+  },
+  "ConnectionStrings": {
+    "Ejemplo": "Server=localhost\\SQLEXPRESS;Database=MiBaseDatos;Trusted_Connection=True;TrustServerCertificate=True;"
+  }
+}

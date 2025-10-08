@@ -1,0 +1,51 @@
+﻿using AIAssistantSQL.Interfaces;
+
+namespace AIAssistantSQL.Services
+{
+    public class AIServiceFactory
+    {
+        private readonly IServiceProvider _serviceProvider;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<AIServiceFactory> _logger;
+
+        public AIServiceFactory(
+            IServiceProvider serviceProvider,
+            IConfiguration configuration,
+            ILogger<AIServiceFactory> logger)
+        {
+            _serviceProvider = serviceProvider;
+            _configuration = configuration;
+            _logger = logger;
+        }
+
+        public IOllamaService GetAIService()
+        {
+            var provider = _configuration["AI:Provider"] ?? "Ollama";
+
+            _logger.LogInformation($"?? Proveedor de IA seleccionado: {provider}");
+
+            IOllamaService service = provider.ToLower() switch
+            {
+                "googleai" or "gemini" => (IOllamaService)_serviceProvider.GetRequiredService<GoogleAIService>(),
+                "ollama" => (IOllamaService)_serviceProvider.GetRequiredService<OllamaService>(),
+                _ => (IOllamaService)_serviceProvider.GetRequiredService<OllamaService>() // Por defecto Ollama
+            };
+
+            return service;
+        }
+
+        public List<string> GetAvailableProviders()
+        {
+            var providers = new List<string> { "Ollama" };
+
+            // Verificar si Google AI está configurado
+            var googleApiKey = _configuration["GoogleAI:ApiKey"];
+            if (!string.IsNullOrWhiteSpace(googleApiKey))
+            {
+                providers.Add("GoogleAI");
+            }
+
+            return providers;
+        }
+    }
+}

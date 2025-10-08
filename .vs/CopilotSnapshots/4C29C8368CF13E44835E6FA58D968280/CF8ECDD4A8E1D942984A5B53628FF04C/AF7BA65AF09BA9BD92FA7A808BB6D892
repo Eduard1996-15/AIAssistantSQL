@@ -1,0 +1,1010 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
+
+namespace AIAssistantSQL.Controllers
+{
+    public class QueryController : Controller
+    {
+        private readonly IOllamaService _ollamaService;
+        private readonly ISchemaLoaderService _schemaLoaderService;
+        private readonly ISqlValidatorService _sqlValidatorService;
+        private readonly IQueryRepository _queryRepository;
+        private readonly ILogger<QueryController> _logger;
+
+        // En memoria para demo - en producción usar base de datos
+        private static List<QueryHistory> _queryHistory = new();
+        
+        // NUEVO: Manejo de conversaciones
+        private static Dictionary<Guid, Conversation> _conversations = new();
+        private static Guid _currentConversationId = Guid.Empty;
+
+        public QueryController(
+            IOllamaService ollamaService,
+            ISchemaLoaderService schemaLoaderService,
+            ISqlValidatorService sqlValidatorService,
+            IQueryRepository queryRepository,
+            ILogger<QueryController> logger)
+        {
+            _ollamaService = ollamaService;
+            _schemaLoaderService = schemaLoaderService;
+            _sqlValidatorService = sqlValidatorService;
+            _queryRepository = queryRepository;
+            _logger = logger;
+        }
+
+        public IActionResult Index()
+        {
+            var currentConnection = DatabaseController.GetCurrentConnection();
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+
+            // Crear nueva conversación si no existe una activa
+            if (_currentConversationId == Guid.Empty)
+            {
+                _currentConversationId = Guid.NewGuid();
+                _conversations[_currentConversationId] = new Conversation
+                {
+                    Id = _currentConversationId,
+                    StartedAt = DateTime.Now,
+                    LastMessageAt = DateTime.Now,
+                    DatabaseName = currentSchema?.DatabaseName ?? "Unknown"
+                };
+            }
+
+            var viewModel = new QueryViewModel
+            {
+                History = _queryHistory.OrderByDescending(q => q.Timestamp).Take(10).ToList(),
+                HasActiveConnection = currentConnection != null,
+                DatabaseName = currentSchema?.DatabaseName
+            };
+
+            if (currentConnection == null || currentSchema == null)
+            {
+                TempData["Warning"] = "?? Primero debes configurar la conexión a tu base de datos. <a href='/Database'>Ir a Configuración</a>";
+            }
+
+            return View(viewModel);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Execute(string naturalLanguageQuery)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var response = new QueryResponse();
+
+            try
+            {
+                // Validar que hay esquema cargado
+                var currentSchema = _schemaLoaderService.GetCurrentSchema();
+                if (currentSchema == null)
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "No hay esquema de base de datos cargado. Por favor cargue un esquema primero en la sección de Configuración.";
+                    return Json(response);
+                }
+
+                _logger.LogInformation($"📊 Esquema cargado: {currentSchema.DatabaseName} con {currentSchema.Tables.Count} tablas");
+                
+                // Log de tablas disponibles
+                var tableNames = string.Join(", ", currentSchema.Tables.Select(t => t.TableName));
+                _logger.LogInformation($"📋 Tablas disponibles: {tableNames}");
+
+                // Validar que hay conexión configurada
+                var currentConnection = DatabaseController.GetCurrentConnection();
+                string? connStr = currentConnection?.ConnectionString;
+                
+                if (currentConnection == null)
+                {
+                    connStr = HttpContext.Session.GetString("ConnectionString");
+                    if (string.IsNullOrWhiteSpace(connStr))
+                    {
+                        response.Success = false;
+                        response.ErrorMessage = "No hay conexión configurada. Por favor configure la cadena de conexión en la sección de Configuración.";
+                        return Json(response);
+                    }
+                }
+
+                // ✅ NUEVO: Obtener tipo de BD temprano para pasarlo a la IA
+                var databaseType = currentConnection?.DatabaseType ?? currentSchema.DatabaseType;
+
+                // Validar que Ollama está disponible
+                var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
+                if (!isOllamaAvailable)
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "Ollama no está disponible. Verifique que esté ejecutándose en http://localhost:11434";
+                    return Json(response);
+                }
+
+                // ✅ MEJORADO: Generar SQL con contexto del tipo de BD
+                _logger.LogInformation($"🔄 Procesando consulta: '{naturalLanguageQuery}' para {databaseType}");
+                _logger.LogInformation($"📤 Enviando esquema completo a la IA ({currentSchema.Tables.Count} tablas)");
+                
+                // Modificar el schema para incluir info del tipo de BD en el DatabaseName
+                var schemaWithContext = new DatabaseSchema
+                {
+                    DatabaseName = $"{currentSchema.DatabaseName} ({databaseType})",
+                    DatabaseType = databaseType,
+                    Tables = currentSchema.Tables,
+                    LoadedAt = currentSchema.LoadedAt
+                };
+                
+                var generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(naturalLanguageQuery, schemaWithContext);
+
+                _logger.LogInformation($"✅ SQL generado por IA: {generatedSql}");
+                response.GeneratedSQL = generatedSql;
+
+                // Validar que el SQL sea seguro (solo SELECT)
+                if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                {
+                    _logger.LogWarning($"?? SQL no válido o no es SELECT");
+                    response.Success = false;
+                    response.ErrorMessage = "La consulta generada no es válida o no es una consulta SELECT segura.";
+                    response.NaturalLanguageResponse = "? No pude generar una consulta SQL válida para tu pregunta. Por favor intenta reformularla de manera más simple.";
+                    
+                    AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
+
+                    return Json(response);
+                }
+
+                // NUEVO: Validar que las tablas y columnas existen en el esquema
+                _logger.LogInformation($"?? Validando SQL contra el esquema...");
+                var queryValidation = ValidateQueryAgainstSchema(generatedSql, currentSchema);
+                
+                if (!queryValidation.IsValid)
+                {
+                    _logger.LogError($"? VALIDACIÓN FALLIDA: {queryValidation.Reason}");
+                    _logger.LogError($"? SQL problemático: {generatedSql}");
+                    
+                    // Reintentar con un prompt más específico que incluya el error
+                    _logger.LogInformation("?? Reintentando generación de SQL con feedback del error...");
+                    var retryPrompt = $@"PREVIOUS ATTEMPT WAS INCORRECT!
+
+ERROR: {queryValidation.Reason}
+
+Your previous SQL was: {generatedSql}
+
+USER'S ORIGINAL QUESTION: {naturalLanguageQuery}
+
+IMPORTANT: Carefully review the schema and use ONLY columns that actually exist.
+Generate a corrected SQL query now:";
+
+                    generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(retryPrompt, currentSchema);
+                    _logger.LogInformation($"? SQL corregido (reintento): {generatedSql}");
+                    
+                    response.GeneratedSQL = generatedSql;
+                    
+                    // Validar de nuevo
+                    if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                    {
+                        _logger.LogError($"? Reintento también falló en validación SELECT");
+                        response.Success = false;
+                        response.ErrorMessage = "No se pudo generar una consulta SQL válida después de varios intentos.";
+                        response.NaturalLanguageResponse = $"? Tuve problemas generando la consulta SQL correcta.\n\n**Error detectado:** {queryValidation.Reason}\n\nIntenta ser más específico o revisar en 'Diagnóstico' qué columnas están disponibles.";
+                        
+                        AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
+                        return Json(response);
+                    }
+
+                    // Validar segunda vez contra el esquema
+                    var secondValidation = ValidateQueryAgainstSchema(generatedSql, currentSchema);
+                    if (!secondValidation.IsValid)
+                    {
+                        _logger.LogError($"? Reintento también falló en validación de esquema: {secondValidation.Reason}");
+                        response.Success = false;
+                        response.ErrorMessage = secondValidation.Reason;
+                        response.NaturalLanguageResponse = $"? No pude generar una consulta válida.\n\n**Error:** {secondValidation.Reason}\n\n**Sugerencia:** Ve a la sección 'Diagnóstico' para ver las columnas exactas disponibles en cada tabla.";
+                        
+                        AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
+                        return Json(response);
+                    }
+                }
+
+                _logger.LogInformation($"? SQL validado correctamente");
+
+                // Limpiar SQL
+                var cleanedSql = _sqlValidatorService.CleanSqlQuery(generatedSql);
+
+                // ? NUEVO: Si es PostgreSQL, agregar comillas a nombres de tabla
+                var databaseType = currentConnection?.DatabaseType ?? currentSchema.DatabaseType;
+                if (databaseType == DatabaseType.PostgreSQL)
+                {
+                    cleanedSql = AddQuotesToPostgreSQLTables(cleanedSql, currentSchema);
+                    _logger.LogInformation($"?? SQL ajustado para PostgreSQL: {cleanedSql}");
+                }
+
+                // Obtener configuración de conexión
+                var connectionString = connStr ?? HttpContext.Session.GetString("ConnectionString");
+
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    response.Success = false;
+                    response.ErrorMessage = "No hay cadena de conexión configurada. Por favor configure la conexión primero.";
+                    return Json(response);
+                }
+
+                // Ejecutar consulta
+                _logger.LogInformation($"Ejecutando SQL: {cleanedSql}");
+                
+                List<Dictionary<string, object>> results;
+                try
+                {
+                    results = await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType);
+                }
+                catch (Exception sqlEx)
+                {
+                    // ? NUEVO: Si hay error de SQL, reintentamos con el feedback del error
+                    _logger.LogError($"? Error ejecutando SQL: {sqlEx.Message}");
+                    _logger.LogInformation($"?? Reintentando con feedback del error SQL...");
+                    
+                    // Enviar el error a la IA para que corrija
+                    var errorFeedback = $@"The previous SQL query failed with this error:
+
+ERROR: {sqlEx.Message}
+
+FAILED SQL: {cleanedSql}
+
+ORIGINAL QUESTION: {naturalLanguageQuery}
+
+Please generate a corrected SQL query that fixes this error.
+Use ONLY tables and columns from the schema provided.";
+
+                    generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(errorFeedback, currentSchema);
+                    _logger.LogInformation($"? SQL corregido después de error: {generatedSql}");
+                    
+                    response.GeneratedSQL = generatedSql;
+                    
+                    // Validar el nuevo SQL
+                    if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                    {
+                        _logger.LogError($"? El SQL corregido tampoco es válido");
+                        response.Success = false;
+                        response.ErrorMessage = $"Error original: {sqlEx.Message}. No se pudo corregir la consulta.";
+                        response.NaturalLanguageResponse = $"? Hubo un error ejecutando la consulta:\n\n**Error:** {sqlEx.Message}\n\nLo intenté corregir pero no pude generar una consulta válida. Intenta ser más específico.";
+                        
+                        AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
+                        return Json(response);
+                    }
+                    
+                    // Limpiar y ejecutar el SQL corregido
+                    cleanedSql = _sqlValidatorService.CleanSqlQuery(generatedSql);
+                    
+                    // Agregar comillas si es PostgreSQL
+                    if (databaseType == DatabaseType.PostgreSQL)
+                    {
+                        cleanedSql = AddQuotesToPostgreSQLTables(cleanedSql, currentSchema);
+                        _logger.LogInformation($"?? SQL corregido ajustado para PostgreSQL: {cleanedSql}");
+                    }
+                    
+                    try
+                    {
+                        _logger.LogInformation($"?? Ejecutando SQL corregido: {cleanedSql}");
+                        results = await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType);
+                        _logger.LogInformation($"? SQL corregido ejecutado exitosamente");
+                    }
+                    catch (Exception retryEx)
+                    {
+                        _logger.LogError($"? El SQL corregido también falló: {retryEx.Message}");
+                        response.Success = false;
+                        response.ErrorMessage = $"Error original: {sqlEx.Message}. Error al reintentar: {retryEx.Message}";
+                        response.NaturalLanguageResponse = $"? Hubo un error ejecutando la consulta:\n\n**Error:** {sqlEx.Message}\n\nIntenté corregirla pero el nuevo intento también falló:\n\n**Nuevo error:** {retryEx.Message}\n\nPor favor, intenta reformular tu pregunta de manera más específica.";
+                        
+                        AddToHistory(naturalLanguageQuery, cleanedSql, response.NaturalLanguageResponse, false);
+                        return Json(response);
+                    }
+                }
+
+                stopwatch.Stop();
+
+                // NUEVO: Obtener contexto de conversación SOLO para interpretación
+                // NO para generación de SQL (evita confusión)
+                var conversationHistory = GetConversationHistory();
+
+                // NUEVO: Interpretar resultados con IA
+                _logger.LogInformation($"?? Interpretando resultados con IA...");
+                var naturalLanguageResponse = await _ollamaService.InterpretQueryResultsAsync(
+                    naturalLanguageQuery,
+                    cleanedSql,
+                    results,
+                    conversationHistory  // Solo para interpretación, NO para generación SQL
+                );
+
+                response.Success = true;
+                response.Results = results;
+                response.RowCount = results.Count;
+                response.ExecutionTime = stopwatch.Elapsed;
+                response.NaturalLanguageResponse = naturalLanguageResponse;
+
+                // Agregar al historial con respuesta de IA
+                AddToHistory(naturalLanguageQuery, cleanedSql, naturalLanguageResponse, true);
+
+                // Agregar a la conversación actual
+                AddToConversation(naturalLanguageQuery, cleanedSql, naturalLanguageResponse, true);
+
+                _logger.LogInformation($"? Consulta exitosa: {results.Count} filas retornadas");
+
+                return Json(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al ejecutar consulta");
+                
+                stopwatch.Stop();
+
+                response.Success = false;
+                response.ErrorMessage = ex.Message;
+                response.ExecutionTime = stopwatch.Elapsed;
+                response.NaturalLanguageResponse = $"? Ocurrió un error al procesar tu consulta: {ex.Message}";
+
+                AddToHistory(naturalLanguageQuery, response.GeneratedSQL ?? "", response.NaturalLanguageResponse, false);
+                AddToConversation(naturalLanguageQuery, response.GeneratedSQL ?? "", response.NaturalLanguageResponse, false);
+
+                return Json(response);
+            }
+        }
+
+        [HttpPost]
+        public IActionResult NewConversation()
+        {
+            _currentConversationId = Guid.NewGuid();
+            var currentSchema = _schemaLoaderService.GetCurrentSchema();
+            
+            _conversations[_currentConversationId] = new Conversation
+            {
+                Id = _currentConversationId,
+                StartedAt = DateTime.Now,
+                LastMessageAt = DateTime.Now,
+                DatabaseName = currentSchema?.DatabaseName ?? "Unknown"
+            };
+
+            TempData["Success"] = "? Nueva conversación iniciada";
+            return RedirectToAction(nameof(Index));
+        }
+
+        public IActionResult History()
+        {
+            return View(_queryHistory.OrderByDescending(q => q.Timestamp).ToList());
+        }
+
+        public IActionResult Conversations()
+        {
+            var conversations = _conversations.Values
+                .OrderByDescending(c => c.LastMessageAt)
+                .ToList();
+
+            return View(conversations);
+        }
+
+        [HttpPost]
+        public IActionResult ClearHistory()
+        {
+            _queryHistory.Clear();
+            TempData["Success"] = "Historial limpiado exitosamente";
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpPost]
+        public IActionResult ClearConversations()
+        {
+            _conversations.Clear();
+            _currentConversationId = Guid.Empty;
+            TempData["Success"] = "Todas las conversaciones eliminadas";
+            return RedirectToAction(nameof(Index));
+        }
+
+        private void AddToHistory(string question, string sql, string aiResponse, bool success)
+        {
+            _queryHistory.Add(new QueryHistory
+            {
+                Timestamp = DateTime.Now,
+                NaturalLanguageQuery = question,
+                GeneratedSQL = sql,
+                NaturalLanguageResponse = aiResponse,
+                Success = success,
+                ConversationId = _currentConversationId
+            });
+        }
+
+        private void AddToConversation(string question, string sql, string aiResponse, bool success)
+        {
+            if (_conversations.TryGetValue(_currentConversationId, out var conversation))
+            {
+                conversation.Messages.Add(new ConversationMessage
+                {
+                    Timestamp = DateTime.Now,
+                    UserQuestion = question,
+                    GeneratedSQL = sql,
+                    AIResponse = aiResponse,
+                    Success = success
+                });
+
+                conversation.LastMessageAt = DateTime.Now;
+            }
+        }
+
+        private List<string> GetConversationHistory()
+        {
+            if (_conversations.TryGetValue(_currentConversationId, out var conversation))
+            {
+                return conversation.Messages
+                    .OrderBy(m => m.Timestamp)
+                    .Select(m => $"Usuario: {m.UserQuestion}\nIA: {m.AIResponse}")
+                    .ToList();
+            }
+
+            return new List<string>();
+        }
+
+        /// <summary>
+        /// Valida que la consulta SQL generada tenga sentido con el esquema de la base de datos
+        /// </summary>
+        private (bool IsValid, string Reason) ValidateQueryAgainstSchema(string sql, DatabaseSchema schema)
+        {
+            var sqlUpper = sql.ToUpper();
+            
+            // Extraer nombres de tablas del SQL (después de FROM y JOIN)
+            var tableNames = new List<string>();
+            var words = sql.Split(new[] { ' ', '\n', '\t', '(', ')' }, StringSplitOptions.RemoveEmptyEntries);
+            
+            for (int i = 0; i < words.Length - 1; i++)
+            {
+                if (words[i].Equals("FROM", StringComparison.OrdinalIgnoreCase) ||
+                    words[i].Equals("JOIN", StringComparison.OrdinalIgnoreCase))
+                {
+                    var tableName = words[i + 1].Trim();
+                    // Remover alias (AS alias)
+                    if (tableName.Contains("AS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tableName = tableName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                    }
+                    tableName = tableName.Replace(";", "").Trim();
+                    tableNames.Add(tableName);
+                }
+            }
+
+            // Verificar que todas las tablas mencionadas existen en el esquema
+            foreach (var tableName in tableNames)
+            {
+                // Intentar coincidencia exacta (case-insensitive)
+                var exists = schema.Tables.Any(t => 
+                    t.TableName.Equals(tableName, StringComparison.OrdinalIgnoreCase));
+                
+                if (!exists)
+                {
+                    // Intentar coincidencia flexible (ignorar guiones bajos, espacios, capitalización)
+                    var normalizedSearchTable = NormalizeTableName(tableName);
+                    var flexibleMatch = schema.Tables.FirstOrDefault(t => 
+                        NormalizeTableName(t.TableName) == normalizedSearchTable);
+                    
+                    if (flexibleMatch != null)
+                    {
+                        _logger.LogInformation($"? Tabla encontrada con coincidencia flexible: '{tableName}' ? '{flexibleMatch.TableName}'");
+                        // Reemplazar el nombre en el SQL con el nombre correcto
+                        sql = System.Text.RegularExpressions.Regex.Replace(
+                            sql, 
+                            $@"\b{tableName}\b", 
+                            flexibleMatch.TableName, 
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                        
+                        _logger.LogInformation($"? SQL corregido automáticamente: {sql}");
+                        continue;
+                    }
+                    
+                    // Si no hay coincidencia ni exacta ni flexible, reportar error
+                    var availableTables = string.Join(", ", schema.Tables.Select(t => t.TableName));
+                    _logger.LogError($"? Tabla '{tableName}' no encontrada. Disponibles: {availableTables}");
+                    
+                    return (false, $"La tabla '{tableName}' no existe en el esquema de la base de datos. Tablas disponibles: {availableTables}");
+                }
+                else
+                {
+                    _logger.LogInformation($"? Tabla '{tableName}' existe (coincidencia exacta)");
+                }
+            }
+
+            // NUEVO: Validar columnas mencionadas en SELECT
+            var selectMatch = System.Text.RegularExpressions.Regex.Match(sql, @"SELECT\s+(.+?)\s+FROM", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (selectMatch.Success)
+            {
+                var selectClause = selectMatch.Groups[1].Value;
+                
+                _logger.LogInformation($"?? Validando SELECT clause: {selectClause}");
+                
+                // Si no es SELECT *, verificar columnas
+                if (!selectClause.Trim().Equals("*") && !selectClause.Contains("COUNT(*)"))
+                {
+                    // Extraer nombres de columnas
+                    var columnParts = selectClause
+                        .Split(',')
+                        .Select(p => p.Trim())
+                        .Where(p => !string.IsNullOrWhiteSpace(p))
+                        .ToList();
+                    
+                    _logger.LogInformation($"?? Columnas a validar: {string.Join(", ", columnParts)}");
+                    
+                    foreach (var columnPart in columnParts)
+                    {
+                        var actualColumnName = columnPart;
+                        
+                        // Limpiar funciones agregadas (COUNT, SUM, MAX, MIN, AVG, etc.)
+                        if (actualColumnName.Contains("(") && actualColumnName.Contains(")"))
+                        {
+                            // Verificar si es una función sin columna específica (ej: COUNT(*))
+                            if (actualColumnName.Contains("COUNT(*)") || 
+                                actualColumnName.Contains("COUNT (*)"))
+                            {
+                                _logger.LogInformation($"? Ignorando COUNT(*)");
+                                continue;
+                            }
+                            
+                            // Extraer nombre de columna de dentro de la función (ej: COUNT(Email) -> Email)
+                            var match = System.Text.RegularExpressions.Regex.Match(
+                                actualColumnName, 
+                                @"\w+\s*\(\s*(\w+\.)?(\w+)\s*\)", 
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                            
+                            if (match.Success && match.Groups.Count > 2)
+                            {
+                                actualColumnName = match.Groups[2].Value;
+                                _logger.LogInformation($"?? Columna extraída de función: {actualColumnName}");
+                            }
+                            else
+                            {
+                                _logger.LogInformation($"? Ignorando expresión con función: {columnPart}");
+                                continue;
+                            }
+                        }
+                        
+                        // Remover alias de tabla (u.Email -> Email)
+                        if (actualColumnName.Contains("."))
+                        {
+                            var parts = actualColumnName.Split('.');
+                            actualColumnName = parts[parts.Length - 1].Trim();
+                            _logger.LogInformation($"?? Columna sin alias de tabla: {actualColumnName}");
+                        }
+                        
+                        // Remover alias de columna (Email AS Correo -> Email)
+                        if (actualColumnName.Contains(" AS ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            actualColumnName = actualColumnName.Split(new[] { " AS ", " as " }, StringSplitOptions.None)[0].Trim();
+                            _logger.LogInformation($"?? Columna sin alias: {actualColumnName}");
+                        }
+                        
+                        // Limpiar caracteres extraños
+                        actualColumnName = actualColumnName.Trim('[', ']', '`', '"', '\'', ' ');
+                        
+                        // Verificar si la columna existe en alguna tabla (case-insensitive y flexible)
+                        var columnExists = schema.Tables.Any(t => 
+                            t.Columns.Any(c => c.ColumnName.Equals(actualColumnName, StringComparison.OrdinalIgnoreCase)));
+                        
+                        if (!columnExists)
+                        {
+                            // Intentar coincidencia flexible
+                            var normalizedSearchColumn = NormalizeTableName(actualColumnName); // Usa el mismo método de normalización
+                            string? flexibleColumnMatch = null;
+                            
+                            foreach (var table in schema.Tables)
+                            {
+                                flexibleColumnMatch = table.Columns.FirstOrDefault(c => 
+                                    NormalizeTableName(c.ColumnName) == normalizedSearchColumn)?.ColumnName;
+                                
+                                if (flexibleColumnMatch != null)
+                                {
+                                    _logger.LogInformation($"? Columna encontrada con coincidencia flexible: '{actualColumnName}' ? '{flexibleColumnMatch}'");
+                                    columnExists = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!columnExists)
+                            {
+                                _logger.LogError($"? Columna '{actualColumnName}' NO existe en el esquema");
+                                
+                                // Buscar columna similar para sugerir
+                                var suggestion = FindSimilarColumn(actualColumnName, schema);
+                                var suggestionText = suggestion != null 
+                                    ? $" ¿Quisiste decir '{suggestion}'?" 
+                                    : "";
+                                
+                                // Listar columnas disponibles de la tabla principal (si se puede identificar)
+                                var availableColumns = schema.Tables
+                                    .SelectMany(t => t.Columns.Select(c => c.ColumnName))
+                                    .Distinct()
+                                    .Take(10);
+                                
+
+                                var availableColumnsText = string.Join(", ", availableColumns);
+                                
+                                return (false, $"La columna '{actualColumnName}' no existe en ninguna tabla del esquema.{suggestionText}\n\nAlgunas columnas disponibles: {availableColumnsText}");
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogInformation($"? Columna '{actualColumnName}' existe en el esquema");
+                        }
+                    }
+                }
+            }
+
+            // Validar columnas en WHERE clause también
+            var whereMatch = System.Text.RegularExpressions.Regex.Match(sql, @"WHERE\s+(.+?)(\s+ORDER BY|\s+GROUP BY|\s*;|\s*$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (whereMatch.Success)
+            {
+                var whereClause = whereMatch.Groups[1].Value;
+                _logger.LogInformation($"?? Validando WHERE clause: {whereClause}");
+                
+                // Extraer nombres de columnas del WHERE (buscar patrones como columna = valor)
+                var whereColumns = System.Text.RegularExpressions.Regex.Matches(
+                    whereClause,
+                    @"(\w+\.)?(\w+)\s*[=<>!]+",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                
+                foreach (System.Text.RegularExpressions.Match match in whereColumns)
+                {
+                    if (match.Groups.Count > 2)
+                    {
+                        var columnName = match.Groups[2].Value.Trim();
+                        
+                        // Verificar si es una palabra clave SQL (AND, OR, etc.)
+                        var sqlKeywords = new[] { "AND", "OR", "NOT", "IN", "LIKE", "IS", "NULL", "TRUE", "FALSE" };
+                        if (sqlKeywords.Contains(columnName.ToUpper()))
+                        {
+                            continue;
+                        }
+                        
+                        var columnExists = schema.Tables.Any(t => 
+                            t.Columns.Any(c => c.ColumnName.Equals(columnName, StringComparison.OrdinalIgnoreCase)));
+                        
+                        if (!columnExists)
+                        {
+                            // Intentar coincidencia flexible
+                            var normalizedSearchColumn = NormalizeTableName(columnName);
+                            var flexibleMatch = schema.Tables
+                                .SelectMany(t => t.Columns)
+                                .FirstOrDefault(c => NormalizeTableName(c.ColumnName) == normalizedSearchColumn);
+                            
+
+                            if (flexibleMatch != null)
+                            {
+                                _logger.LogInformation($"? Columna en WHERE encontrada con coincidencia flexible: '{columnName}' ? '{flexibleMatch.ColumnName}'");
+                                columnExists = true;
+                            }
+                        }
+                        
+                        if (!columnExists)
+                        {
+                            _logger.LogError($"? Columna '{columnName}' en WHERE clause NO existe");
+                            var suggestion = FindSimilarColumn(columnName, schema);
+                            var suggestionText = suggestion != null ? $" ¿Quisiste decir '{suggestion}'?" : "";
+                            
+                            return (false, $"La columna '{columnName}' en la cláusula WHERE no existe.{suggestionText}");
+                        }
+                        else
+                        {
+                            _logger.LogInformation($"? Columna '{columnName}' en WHERE existe");
+                        }
+                    }
+                }
+            }
+
+            // Validar JOINs innecesarios con tablas no relacionadas
+            if (sqlUpper.Contains("NOTIFICACION") && 
+                (sqlUpper.Contains("USUARIO") || sqlUpper.Contains("USER")))
+            {
+                // Verificar si realmente hay una FK entre estas tablas
+                var notificacionTable = schema.Tables.FirstOrDefault(t => 
+                    t.TableName.Equals("Notificacion", StringComparison.OrdinalIgnoreCase));
+                
+                if (notificacionTable != null)
+                {
+                    var hasUserFK = notificacionTable.ForeignKeys.Any(fk =>
+                        fk.ReferencedTable.Equals("Usuario", StringComparison.OrdinalIgnoreCase));
+                    
+                    if (!hasUserFK && sqlUpper.Contains("JOIN"))
+                    {
+                        return (false, "No hay relación directa entre Usuario y Notificacion. Para preguntas sobre usuarios, solo consulta la tabla Usuario.");
+                    }
+                }
+            }
+
+            return (true, string.Empty);
+        }
+
+        /// <summary>
+        /// Normaliza un nombre de tabla para comparación flexible (sin guiones, espacios, minúsculas)
+        /// </summary>
+        private string NormalizeTableName(string tableName)
+        {
+            return tableName
+                .ToLower()
+                .Replace("_", "")
+                .Replace("-", "")
+                .Replace(" ", "")
+                .Trim();
+        }
+
+        /// <summary>
+        /// Busca una columna similar en el esquema usando análisis semántico automático (SIN mapeos hardcodeados)
+        /// </summary>
+        private string? FindSimilarColumn(string searchColumn, DatabaseSchema schema)
+        {
+            searchColumn = searchColumn.ToLower().Trim();
+
+            // 1. Búsqueda EXACTA (ignorando mayúsculas)
+            foreach (var table in schema.Tables)
+            {
+                var exactMatch = table.Columns.FirstOrDefault(c => 
+                    c.ColumnName.Equals(searchColumn, StringComparison.OrdinalIgnoreCase));
+                
+                if (exactMatch != null)
+                {
+                    _logger.LogInformation($"? Columna encontrada (exacta): '{exactMatch.ColumnName}'");
+                    return exactMatch.ColumnName;
+                }
+            }
+
+            // 2. Búsqueda CONTAINS (la columna contiene el término buscado)
+            foreach (var table in schema.Tables)
+            {
+                var containsMatch = table.Columns.FirstOrDefault(c => 
+                    c.ColumnName.Contains(searchColumn, StringComparison.OrdinalIgnoreCase));
+                
+                if (containsMatch != null)
+                {
+                    _logger.LogInformation($"? Columna encontrada (contains): '{containsMatch.ColumnName}' contiene '{searchColumn}'");
+                    return containsMatch.ColumnName;
+                }
+            }
+
+            // 3. Búsqueda INVERSA (el término buscado contiene la columna)
+            foreach (var table in schema.Tables)
+            {
+                var reverseMatch = table.Columns.FirstOrDefault(c => 
+                    searchColumn.Contains(c.ColumnName.ToLower()));
+                
+                if (reverseMatch != null)
+                {
+                    _logger.LogInformation($"? Columna encontrada (reverse): '{searchColumn}' contiene '{reverseMatch.ColumnName}'");
+                    return reverseMatch.ColumnName;
+                }
+            }
+
+            // 4. Búsqueda por SIMILITUD (Levenshtein Distance)
+            string? bestMatch = null;
+            int bestDistance = int.MaxValue;
+            const int MAX_DISTANCE = 3; // Máximo 3 caracteres de diferencia
+
+            foreach (var table in schema.Tables)
+            {
+                foreach (var column in table.Columns)
+                {
+                    var distance = LevenshteinDistance(searchColumn, column.ColumnName.ToLower());
+                    
+                    if (distance < bestDistance && distance <= MAX_DISTANCE)
+                    {
+                        bestDistance = distance;
+                        bestMatch = column.ColumnName;
+                    }
+                }
+            }
+
+            if (bestMatch != null)
+            {
+                _logger.LogInformation($"? Columna encontrada (similitud): '{bestMatch}' es similar a '{searchColumn}' (distancia: {bestDistance})");
+                return bestMatch;
+            }
+
+            // 5. Búsqueda por PALABRAS CLAVE comunes (genérico, no hardcodeado)
+            var keywords = ExtractKeywords(searchColumn);
+            foreach (var keyword in keywords)
+            {
+                foreach (var table in schema.Tables)
+                {
+                    var keywordMatch = table.Columns.FirstOrDefault(c => 
+                        c.ColumnName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (keywordMatch != null)
+                    {
+                        _logger.LogInformation($"? Columna encontrada (keyword): '{keywordMatch.ColumnName}' contiene keyword '{keyword}'");
+                        return keywordMatch.ColumnName;
+                    }
+                }
+            }
+
+            _logger.LogWarning($"? No se encontró ninguna columna similar a '{searchColumn}'");
+            return null;
+        }
+
+        /// <summary>
+        /// Extrae palabras clave de un término de búsqueda (para búsqueda semántica)
+        /// </summary>
+        private List<string> ExtractKeywords(string searchTerm)
+        {
+            var keywords = new List<string>();
+            searchTerm = searchTerm.ToLower();
+
+            // Palabras comunes que indican conceptos (genérico, no específico a ninguna BD)
+            var commonPrefixes = new[] { "is", "has", "get", "set", "user", "name", "date", "time" };
+            var commonSuffixes = new[] { "id", "name", "date", "time", "number", "code", "type", "status" };
+
+            // Agregar el término completo
+            keywords.Add(searchTerm);
+
+            // Si el término tiene más de 4 caracteres, agregar substrings
+            if (searchTerm.Length > 4)
+            {
+                // Primeros 4 caracteres
+                keywords.Add(searchTerm.Substring(0, 4));
+                
+                // Últimos 4 caracteres
+                keywords.Add(searchTerm.Substring(searchTerm.Length - 4));
+            }
+
+            // Detectar y remover prefijos comunes
+            foreach (var prefix in commonPrefixes)
+            {
+                if (searchTerm.StartsWith(prefix))
+                {
+                    var withoutPrefix = searchTerm.Substring(prefix.Length);
+                    if (withoutPrefix.Length > 2)
+                    {
+                        keywords.Add(withoutPrefix);
+                    }
+                }
+            }
+
+            // Detectar y remover sufijos comunes
+            foreach (var suffix in commonSuffixes)
+            {
+                if (searchTerm.EndsWith(suffix))
+                {
+                    var withoutSuffix = searchTerm.Substring(0, searchTerm.Length - suffix.Length);
+                    if (withoutSuffix.Length > 2)
+                    {
+                        keywords.Add(withoutSuffix);
+                    }
+                }
+            }
+
+            return keywords.Distinct().ToList();
+        }
+
+        /// <summary>
+        /// Calcula la distancia de Levenshtein entre dos cadenas (mide similitud)
+        /// </summary>
+        private int LevenshteinDistance(string s, string t)
+        {
+            int n = s.Length;
+            int m = t.Length;
+            int[,] d = new int[n + 1, m + 1];
+
+            if (n == 0) return m;
+            if (m == 0) return n;
+
+            for (int i = 0; i <= n; i++)
+                d[i, 0] = i;
+            
+            for (int j = 0; j <= m; j++)
+                d[0, j] = j;
+
+            for (int j = 1; j <= m; j++)
+            {
+                for (int i = 1; i <= n; i++)
+                {
+                    int cost = (s[i - 1] == t[j - 1]) ? 0 : 1;
+                    d[i, j] = Math.Min(
+                        Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                        d[i - 1, j - 1] + cost);
+                }
+            }
+
+            return d[n, m];
+        }
+
+        /// <summary>
+        /// Agrega comillas dobles a los nombres de tabla Y columnas en PostgreSQL cuando sea necesario
+        /// </summary>
+        private string AddQuotesToPostgreSQLTables(string sql, DatabaseSchema schema)
+        {
+            // 1. ✅ MEJORADO: Agregar comillas a TODAS las referencias de nombres de TABLAS
+            foreach (var table in schema.Tables)
+            {
+                var tableName = table.TableName;
+                
+                // Solo agregar comillas si el nombre tiene mayúsculas
+                if (tableName.Any(char.IsUpper))
+                {
+                    // Patrón 1: FROM/JOIN tableName
+                    var fromJoinPattern = $@"\b(FROM|JOIN|UPDATE|DELETE FROM)\s+{System.Text.RegularExpressions.Regex.Escape(tableName)}\b";
+                    var fromJoinReplacement = $@"$1 ""{tableName}""";
+                    
+                    sql = System.Text.RegularExpressions.Regex.Replace(
+                        sql, 
+                        fromJoinPattern, 
+                        fromJoinReplacement, 
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+                    
+                    // Patrón 2: tableName con alias (tableName t, tableName AS t)
+                    var aliasPattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(tableName)}\s+(AS\s+)?([a-z]+)\b";
+                    var aliasReplacement = $@"""{tableName}"" $1$2";
+                    
+                    sql = System.Text.RegularExpressions.Regex.Replace(
+                        sql, 
+                        aliasPattern, 
+                        aliasReplacement, 
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+                    
+                    // ✅ NUEVO: Patrón 3: Tabla sola sin alias (ej: ON Funcionarios.Id)
+                    // Esto captura referencias como: ON Funcionarios."Col", WHERE Funcionarios."Col"
+                    var standaloneTablePattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(tableName)}\.";
+                    var standaloneTableReplacement = $@"""{tableName}""." ;
+                    
+                    sql = System.Text.RegularExpressions.Regex.Replace(
+                        sql,
+                        standaloneTablePattern,
+                        standaloneTableReplacement,
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+                }
+            }
+            
+            // 2. ✅ Agregar comillas a nombres de COLUMNAS (NO a alias personalizados)
+            foreach (var table in schema.Tables)
+            {
+                foreach (var column in table.Columns)
+                {
+                    var columnName = column.ColumnName;
+                    
+                    // Solo agregar comillas si el nombre tiene mayúsculas
+                    if (columnName.Any(char.IsUpper))
+                    {
+                        // ✅ IMPORTANTE: Solo agregar comillas si NO hay "AS" inmediatamente después
+                        
+                        // Patrón 1: alias.ColumnName (ej: f.Cedula → f."Cedula")
+                        // SOLO si NO está seguido de AS
+                        var aliasColumnPattern = $@"\b([a-zA-Z_]+)\.{System.Text.RegularExpressions.Regex.Escape(columnName)}(?!\s+AS\s)";
+                        var aliasColumnReplacement = $@"$1.""{columnName}""";
+                        
+                        sql = System.Text.RegularExpressions.Regex.Replace(
+                            sql,
+                            aliasColumnPattern,
+                            aliasColumnReplacement,
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                        );
+                        
+                        // Patrón 2: ColumnName sin alias (SELECT ColumnName, WHERE ColumnName)
+                        // SOLO si NO está seguido de AS
+                        var standAlonePattern = $@"\b(SELECT|WHERE|AND|OR|ORDER BY|GROUP BY|HAVING|ON)\s+{System.Text.RegularExpressions.Regex.Escape(columnName)}(?!\s+AS\s)";
+                        var standAloneReplacement = $@"$1 ""{columnName}""";
+                        
+                        sql = System.Text.RegularExpressions.Regex.Replace(
+                            sql,
+                            standAlonePattern,
+                            standAloneReplacement,
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                        );
+                        
+                        // Patrón 3: ColumnName después de coma
+                        // SOLO si NO está seguido de AS
+                        var commaPattern = $@",\s*{System.Text.RegularExpressions.Regex.Escape(columnName)}(?!\s+AS\s)";
+                        var commaReplacement = $@", ""{columnName}""";
+                        
+                        sql = System.Text.RegularExpressions.Regex.Replace(
+                            sql,
+                            commaPattern,
+                            commaReplacement,
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                        );
+                    }
+                }
+            }
+            
+            _logger.LogInformation($"🔧 SQL con comillas aplicadas: {sql}");
+            
+            return sql;
+        }
+    }
+}

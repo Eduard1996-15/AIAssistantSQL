@@ -1,0 +1,723 @@
+﻿using AIAssistantSQL.Interfaces;
+using AIAssistantSQL.Models;
+using System.Text;
+using System.Text.Json;
+
+namespace AIAssistantSQL.Services
+{
+    /// <summary>
+    /// Servicio para interactuar con Ollama y generar consultas SQL
+    /// </summary>
+    public class OllamaService : IOllamaService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<OllamaService> _logger;
+        private string _model; // Cambiado de readonly para poder modificarlo
+        private const string OllamaGenerateEndpoint = "api/generate";
+
+        // Constructor que recibe HttpClient por inyección de dependencias (como tu app SCU)
+        public OllamaService(HttpClient httpClient, IConfiguration configuration, ILogger<OllamaService> logger)
+        {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _configuration = configuration;
+            _logger = logger;
+            _model = _configuration["Ollama:Model"] ?? "llama3.2";
+            
+            // El HttpClient ya viene configurado desde Program.cs
+            _logger.LogInformation($"?? OllamaService inicializado - Modelo: {_model}");
+            _logger.LogInformation($"?? BaseAddress: {_httpClient.BaseAddress}");
+        }
+
+        /// <summary>
+        /// Obtiene la lista de modelos disponibles en Ollama
+        /// </summary>
+        public async Task<List<OllamaModel>> GetAvailableModelsAsync()
+        {
+            try
+            {
+                _logger.LogInformation("?? Obteniendo lista de modelos disponibles...");
+
+                var response = await _httpClient.GetAsync("api/tags");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning($"?? Error obteniendo modelos: {response.StatusCode}");
+                    return new List<OllamaModel>();
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var jsonDoc = JsonDocument.Parse(content);
+
+                var models = new List<OllamaModel>();
+
+                if (jsonDoc.RootElement.TryGetProperty("models", out JsonElement modelsElement))
+                {
+                    foreach (var modelElement in modelsElement.EnumerateArray())
+                    {
+                        var name = modelElement.GetProperty("name").GetString() ?? "";
+                        var sizeBytes = modelElement.GetProperty("size").GetInt64();
+                        var modifiedAt = modelElement.GetProperty("modified_at").GetDateTime();
+
+                        // Convertir tamaño a formato legible
+                        var sizeGB = sizeBytes / (1024.0 * 1024.0 * 1024.0);
+                        var sizeFormatted = sizeGB >= 1 
+                            ? $"{sizeGB:F1} GB" 
+                            : $"{sizeBytes / (1024.0 * 1024.0):F0} MB";
+
+                        // Determinar si es recomendado para SQL
+                        var isRecommendedForSQL = name.Contains("codellama", StringComparison.OrdinalIgnoreCase) ||
+                                                   name.Contains("code", StringComparison.OrdinalIgnoreCase) ||
+                                                   name.Contains("sql", StringComparison.OrdinalIgnoreCase);
+
+                        var description = GetModelDescription(name);
+
+                        models.Add(new OllamaModel
+                        {
+                            Name = name,
+                            Size = sizeFormatted,
+                            ModifiedAt = modifiedAt,
+                            Description = description,
+                            IsRecommendedForSQL = isRecommendedForSQL
+                        });
+                    }
+                }
+
+                _logger.LogInformation($"? Encontrados {models.Count} modelos");
+                return models.OrderByDescending(m => m.IsRecommendedForSQL).ThenBy(m => m.Name).ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Error obteniendo modelos de Ollama");
+                return new List<OllamaModel>();
+            }
+        }
+
+        /// <summary>
+        /// Obtiene el modelo actualmente en uso
+        /// </summary>
+        public string GetCurrentModel()
+        {
+            return _model;
+        }
+
+        /// <summary>
+        /// Cambia el modelo a usar
+        /// </summary>
+        public void SetModel(string modelName)
+        {
+            if (string.IsNullOrWhiteSpace(modelName))
+            {
+                throw new ArgumentException("El nombre del modelo no puede estar vacío", nameof(modelName));
+            }
+
+            _logger.LogInformation($"?? Cambiando modelo de '{_model}' a '{modelName}'");
+            _model = modelName;
+            _logger.LogInformation($"? Modelo actualizado a: {_model}");
+        }
+
+        private string GetModelDescription(string modelName)
+        {
+            var lowerName = modelName.ToLower();
+
+            if (lowerName.Contains("codellama"))
+                return "?? Especializado en código y SQL - Recomendado";
+            else if (lowerName.Contains("code"))
+                return "?? Optimizado para programación y SQL";
+            else if (lowerName.Contains("sql"))
+                return "??? Especializado en bases de datos";
+            else if (lowerName.Contains("llama3.2"))
+                return "?? Modelo rápido y ligero - Buen balance";
+            else if (lowerName.Contains("llama3"))
+                return "? Modelo general versión 3";
+            else if (lowerName.Contains("llama2"))
+                return "?? Modelo general versión 2";
+            else if (lowerName.Contains("mistral"))
+                return "?? Modelo eficiente y preciso";
+            else if (lowerName.Contains("phi"))
+                return "?? Modelo pequeño y eficiente";
+            else if (lowerName.Contains("gemma"))
+                return "?? Modelo de Google - Alta calidad";
+            else
+                return "?? Modelo de propósito general";
+        }
+
+        public async Task<string> GenerateSQLFromNaturalLanguageAsync(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            CancellationTokenSource cts = null;
+            HttpResponseMessage response = null;
+            
+            try
+            {
+                var prompt = BuildPrompt(naturalLanguageQuery, schema);
+
+                _logger.LogInformation($"?? Enviando consulta a Ollama con modelo: {_model}");
+
+                // Request EXACTO como tu app SCU
+                var requestData = new
+                {
+                    model = _model,
+                    prompt = prompt,
+                    stream = false,
+                    options = new 
+                    {
+                        temperature = 0.3,
+                        top_p = 0.8,
+                        max_tokens = 1024,
+                        num_predict = 512,
+                        repeat_penalty = 1.1
+                    }
+                };
+
+                var json = JsonSerializer.Serialize(requestData);
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                _logger.LogInformation($"?? Enviando petición a: {OllamaGenerateEndpoint}");
+                _logger.LogInformation($"?? URL completa: {_httpClient.BaseAddress}{OllamaGenerateEndpoint}");
+
+                // CancellationToken igual que tu app SCU
+                cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+                try
+                {
+                    // USAR URL RELATIVA como en tu app SCU
+                    response = await _httpClient.PostAsync(OllamaGenerateEndpoint, content, cts.Token);
+                    
+                    _logger.LogInformation($"?? Respuesta recibida: {response.StatusCode}");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync(cts.Token);
+                        _logger.LogWarning($"?? Ollama respondió con error: {response.StatusCode} - {response.ReasonPhrase}");
+                        _logger.LogWarning($"?? Contenido del error: {errorContent}");
+                        
+                        return "**Error de conexion con IA**\n\n" +
+                               $"**Estado:** {response.StatusCode} - {response.ReasonPhrase}\n" +
+                               "**Solucion:**\n" +
+                               "1. Verificar que Ollama este ejecutandose: `ollama serve`\n" +
+                               "2. Comprobar que el modelo este instalado: `ollama pull llama3.2`\n" +
+                               "3. Verificar conectividad en: http://localhost:11434\n\n" +
+                               "**Nota:** El sistema continua funcionando normalmente.";
+                    }
+
+                    string responseContent;
+                    try
+                    {
+                        responseContent = await response.Content.ReadAsStringAsync(cts.Token);
+                        _logger.LogInformation($"?? Contenido recibido: {responseContent.Length} caracteres");
+                    }
+                    catch (Exception readEx)
+                    {
+                        _logger.LogError(readEx, "? Error leyendo contenido de respuesta");
+                        throw new Exception("Error leyendo respuesta de IA");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(responseContent))
+                    {
+                        _logger.LogWarning("?? Respuesta vacía de Ollama");
+                        throw new Exception("Respuesta vacía del servicio de IA");
+                    }
+
+                    JsonDocument jsonResponse;
+                    try
+                    {
+                        jsonResponse = JsonDocument.Parse(responseContent);
+                    }
+                    catch (JsonException jsonEx)
+                    {
+                        _logger.LogError(jsonEx, "? Error deserializando JSON");
+                        throw new Exception("Error procesando respuesta de IA");
+                    }
+
+                    // Parsear respuesta IGUAL que tu app SCU
+                    if (jsonResponse.RootElement.TryGetProperty("response", out JsonElement responseElement))
+                    {
+                        var generatedText = responseElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(generatedText))
+                        {
+                            _logger.LogInformation("? Respuesta de IA procesada exitosamente");
+                            
+                            // Pequeña pausa para asegurar completion
+                            await Task.Delay(10, cts.Token);
+                            
+                            var sql = ExtractSqlFromResponse(generatedText);
+                            _logger.LogInformation($"? SQL generado exitosamente: {sql}");
+                            
+                            return sql;
+                        }
+                        else
+                        {
+                            _logger.LogWarning("?? Respuesta de IA vacía en campo 'response'");
+                            throw new Exception("Respuesta vacía. Intente con una pregunta más específica.");
+                        }
+                    }
+
+                    // Verificar si hay un error en la respuesta
+                    if (jsonResponse.RootElement.TryGetProperty("error", out JsonElement errorElement))
+                    {
+                        var errorMessage = errorElement.GetString();
+                        _logger.LogError($"? Error reportado por Ollama: {errorMessage}");
+                        throw new Exception($"Error del servicio de IA: {errorMessage}");
+                    }
+
+                    _logger.LogWarning("?? Estructura de respuesta inesperada");
+                    throw new Exception("Respuesta inesperada del servicio de IA");
+                }
+                catch (OperationCanceledException) when (cts?.Token.IsCancellationRequested == true)
+                {
+                    _logger.LogWarning("? Timeout de 30 segundos alcanzado");
+                    throw new Exception(
+                        "? Timeout del servicio de IA\n\n" +
+                        "La consulta tardó demasiado (30 segundos).\n\n" +
+                        "Sugerencias:\n" +
+                        "- Intente con una pregunta más corta\n" +
+                        "- Verifique recursos del sistema\n" +
+                        "- Reinicie Ollama si persiste");
+                }
+                finally
+                {
+                    // CRÍTICO: Liberar recursos HTTP
+                    if (response != null)
+                    {
+                        try
+                        {
+                            response.Dispose();
+                        }
+                        catch (Exception disposeEx)
+                        {
+                            _logger.LogWarning(disposeEx, "?? Error liberando HttpResponseMessage");
+                        }
+                    }
+                }
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogError(httpEx, "?? Error de conexión HTTP");
+                throw new Exception(
+                    $"? Error de conectividad\n\n" +
+                    $"Detalle: {httpEx.Message}\n\n" +
+                    "Soluciones:\n" +
+                    "1. Verificar que Ollama esté ejecutándose: ollama serve\n" +
+                    "2. Comprobar puerto 11434\n" +
+                    "3. Verificar firewall\n" +
+                    "4. Probar: curl http://localhost:11434/api/tags",
+                    httpEx);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not HttpRequestException)
+            {
+                _logger.LogError(ex, "? Error inesperado");
+                throw new Exception($"Error al comunicarse con Ollama: {ex.Message}", ex);
+            }
+            finally
+            {
+                // CRÍTICO: Liberar CancellationTokenSource
+                try
+                {
+                    cts?.Dispose();
+                }
+                catch (Exception ctsEx)
+                {
+                    _logger.LogWarning(ctsEx, "?? Error liberando CancellationTokenSource");
+                }
+
+                // CRÍTICO: Garbage collection
+                try
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                catch (Exception gcEx)
+                {
+                    _logger.LogWarning(gcEx, "?? Error en GC");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Interpreta los resultados de una consulta SQL y genera una respuesta en lenguaje natural
+        /// </summary>
+        public async Task<string> InterpretQueryResultsAsync(
+            string originalQuestion, 
+            string executedSql, 
+            List<Dictionary<string, object>> results,
+            List<string> conversationHistory = null)
+        {
+            CancellationTokenSource cts = null;
+            HttpResponseMessage response = null;
+            
+            try
+            {
+                var prompt = BuildInterpretationPrompt(originalQuestion, executedSql, results, conversationHistory);
+
+                _logger.LogInformation($"?? Interpretando resultados con IA...");
+
+                var requestData = new
+                {
+                    model = _model,
+                    prompt = prompt,
+                    stream = false,
+                    options = new 
+                    {
+                        temperature = 0.7, // Más creativo para respuestas naturales
+                        top_p = 0.9,
+                        max_tokens = 2048,
+                        num_predict = 1024,
+                        repeat_penalty = 1.1
+                    }
+                };
+
+                var json = JsonSerializer.Serialize(requestData);
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+                response = await _httpClient.PostAsync(OllamaGenerateEndpoint, content, cts.Token);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("?? Error al interpretar resultados");
+                    return FormatResultsAsTable(results); // Fallback a tabla simple
+                }
+
+                string responseContent = await response.Content.ReadAsStringAsync(cts.Token);
+                var jsonResponse = JsonDocument.Parse(responseContent);
+
+                if (jsonResponse.RootElement.TryGetProperty("response", out JsonElement responseElement))
+                {
+                    var interpretation = responseElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(interpretation))
+                    {
+                        _logger.LogInformation("? Interpretación generada exitosamente");
+                        return interpretation;
+                    }
+                }
+
+                return FormatResultsAsTable(results); // Fallback
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Error interpretando resultados");
+                return FormatResultsAsTable(results); // Fallback
+            }
+            finally
+            {
+                response?.Dispose();
+                cts?.Dispose();
+            }
+        }
+
+        public async Task<bool> IsAvailableAsync()
+        {
+            try
+            {
+                _logger.LogInformation("?? Verificando disponibilidad de Ollama...");
+
+                var response = await _httpClient.GetAsync("api/tags");
+
+                _logger.LogInformation($"?? Respuesta: {response.StatusCode}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation("? Ollama disponible");
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning($"?? Ollama respondió: {response.StatusCode}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "? Ollama no disponible");
+                return false;
+            }
+        }
+
+        private string BuildPrompt(string naturalLanguageQuery, DatabaseSchema schema)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("You are an expert SQL query generator with advanced column-matching capabilities.");
+            sb.AppendLine("Your task is to convert natural language questions into precise SQL SELECT queries.");
+            sb.AppendLine();
+            sb.AppendLine("CRITICAL RULES:");
+            sb.AppendLine("1. Generate ONLY the SQL query - no explanations, no markdown, no extra text");
+            sb.AppendLine("2. Use the SIMPLEST possible query that answers the question");
+            sb.AppendLine("3. ONLY join tables if the question explicitly requires data from multiple tables");
+            sb.AppendLine("4. **MOST IMPORTANT**: You MUST analyze the schema and find the correct column names");
+            sb.AppendLine("5. **INTELLIGENT COLUMN MATCHING**: When the user mentions a concept (e.g., 'name', 'nombre', 'usuario'), you must:");
+            sb.AppendLine("   - Search through ALL columns in the relevant table");
+            sb.AppendLine("   - Find columns that semantically match (e.g., 'Name', 'UserName', 'FullName', 'nombre', 'Nombre')");
+            sb.AppendLine("   - Use EXACT column names from the schema (case-sensitive)");
+            sb.AppendLine("   - If multiple similar columns exist, choose the most appropriate one");
+            sb.AppendLine("6. **NEVER** assume column names - always use the EXACT names from the schema below");
+            sb.AppendLine("7. Do NOT use column names that don't exist in the schema");
+            sb.AppendLine();
+            
+            sb.AppendLine("COLUMN MATCHING STRATEGY:");
+            sb.AppendLine("When user asks about:");
+            sb.AppendLine("  - 'name', 'nombre', 'nom' ? Look for columns containing: Name, UserName, FullName, nombre, Nombre");
+            sb.AppendLine("  - 'email', 'correo', 'mail' ? Look for columns containing: Email, EmailAddress, correo, Mail");
+            sb.AppendLine("  - 'phone', 'telefono', 'tel' ? Look for columns containing: Phone, PhoneNumber, Telephone, telefono");
+            sb.AppendLine("  - 'active', 'activo', 'enabled' ? Look for columns containing: active, activo, Active, IsActive, Enabled");
+            sb.AppendLine("  - 'user', 'usuario' ? Look for columns containing: User, Usuario, UserName, Username");
+            sb.AppendLine("  - 'id', 'identifier' ? Look for columns containing: Id, ID, identifier");
+            sb.AppendLine();
+            sb.AppendLine("**Remember**: These are just hints. Always search the actual schema for similar columns!");
+            sb.AppendLine();
+            
+            sb.AppendLine($"DATABASE INFORMATION:");
+            sb.AppendLine($"Type: {schema.DatabaseType}");
+            sb.AppendLine($"Name: {schema.DatabaseName}");
+            sb.AppendLine();
+            sb.AppendLine("COMPLETE DATABASE SCHEMA (USE THESE EXACT COLUMN NAMES):");
+            sb.AppendLine();
+
+            foreach (var table in schema.Tables)
+            {
+                sb.AppendLine($"??? TABLE: {table.TableName} ???");
+                sb.AppendLine("  Available Columns:");
+
+                foreach (var column in table.Columns)
+                {
+                    var nullable = column.IsNullable ? "NULL" : "NOT NULL";
+                    var identity = column.IsIdentity ? " [AUTO-INCREMENT]" : "";
+                    var pk = table.PrimaryKeys.Contains(column.ColumnName) ? " [PRIMARY KEY]" : "";
+                    
+                    sb.AppendLine($"    • {column.ColumnName}: {column.DataType}{(column.MaxLength.HasValue ? $"({column.MaxLength})" : "")} {nullable}{identity}{pk}");
+                }
+
+                if (table.ForeignKeys.Any())
+                {
+                    sb.AppendLine("  Foreign Key Relationships:");
+                    foreach (var fk in table.ForeignKeys)
+                    {
+                        sb.AppendLine($"    • {table.TableName}.{fk.ColumnName} ? {fk.ReferencedTable}.{fk.ReferencedColumn}");
+                    }
+                }
+                
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("USER'S NATURAL LANGUAGE QUESTION:");
+            sb.AppendLine($"? {naturalLanguageQuery}");
+            sb.AppendLine();
+            sb.AppendLine("YOUR TASK:");
+            sb.AppendLine("1. **Analyze the question**: What information is the user requesting?");
+            sb.AppendLine("2. **Identify the table(s)**: Which table(s) contain this information?");
+            sb.AppendLine("3. **Match columns intelligently**: Find the actual column names that match the user's intent");
+            sb.AppendLine("   Example: User asks 'show names' ? Look in the table for columns like 'Name', 'UserName', 'nombre', etc.");
+            sb.AppendLine("4. **Verify column existence**: Double-check that every column you use EXISTS in the schema above");
+            sb.AppendLine("5. **Build the query**: Use ONLY columns that exist in the schema");
+            sb.AppendLine("6. **Return ONLY the SQL**: No explanations, just the query");
+            sb.AppendLine();
+            sb.AppendLine("STEP-BY-STEP EXAMPLE:");
+            sb.AppendLine("Question: 'Show me user names and emails'");
+            sb.AppendLine("Step 1: User wants user information ? Check Usuario or User table");
+            sb.AppendLine("Step 2: Look for 'name' columns ? Found: UserName, Name");
+            sb.AppendLine("Step 3: Look for 'email' columns ? Found: Email");
+            sb.AppendLine("Step 4: Build query ? SELECT UserName, Name, Email FROM Usuario");
+            sb.AppendLine();
+            sb.AppendLine("NOW GENERATE THE SQL QUERY:");
+            sb.AppendLine("?? CRITICAL: Use ONLY column names that EXIST in the schema above!");
+            sb.AppendLine("?? Do NOT invent or guess column names!");
+            sb.AppendLine();
+            sb.AppendLine("SQL Query:");
+
+            return sb.ToString();
+        }
+
+        private string BuildInterpretationPrompt(
+            string originalQuestion, 
+            string executedSql, 
+            List<Dictionary<string, object>> results,
+            List<string> conversationHistory)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("You are a helpful database assistant. Your job is to interpret SQL query results and present them clearly.");
+            sb.AppendLine();
+            sb.AppendLine("CRITICAL RULES:");
+            sb.AppendLine("1. ONLY use information from the query results provided");
+            sb.AppendLine("2. Do NOT make assumptions or add information not in the results");
+            sb.AppendLine("3. If results are empty, say so clearly - do NOT invent data");
+            sb.AppendLine("4. For counts, state the exact number found");
+            sb.AppendLine("5. For lists, present the data in a clear, readable format");
+            sb.AppendLine("6. Use markdown tables for tabular data");
+            sb.AppendLine("7. Answer in the same language as the question");
+            sb.AppendLine("8. Be direct and concise");
+            sb.AppendLine();
+
+            // Agregar contexto de conversación si existe
+            if (conversationHistory != null && conversationHistory.Any())
+            {
+                sb.AppendLine("CONVERSATION CONTEXT (last 3 messages):");
+                foreach (var msg in conversationHistory.TakeLast(3))
+                {
+                    sb.AppendLine($"{msg}");
+                }
+                sb.AppendLine();
+            }
+
+            sb.AppendLine($"USER QUESTION: {originalQuestion}");
+            sb.AppendLine();
+            sb.AppendLine($"SQL EXECUTED: {executedSql}");
+            sb.AppendLine();
+            
+            if (results == null || !results.Any())
+            {
+                sb.AppendLine("QUERY RESULTS: No results returned (0 rows)");
+                sb.AppendLine();
+                sb.AppendLine("INSTRUCTIONS:");
+                sb.AppendLine("- Clearly state that no results were found");
+                sb.AppendLine("- Suggest why this might be (e.g., 'No active users found' or 'The table is empty')");
+                sb.AppendLine("- Do NOT invent or assume data that doesn't exist");
+            }
+            else
+            {
+                sb.AppendLine($"QUERY RESULTS ({results.Count} rows):");
+                sb.AppendLine();
+
+                // Mostrar primeras 20 filas para no saturar el prompt
+                var rowsToShow = results.Take(20).ToList();
+                
+                // Si es un solo valor (como COUNT)
+                if (results.Count == 1 && results[0].Count == 1)
+                {
+                    var value = results[0].First().Value;
+                    var columnName = results[0].First().Key;
+                    sb.AppendLine($"{columnName}: {value}");
+                }
+                else
+                {
+                    // Mostrar datos tabulares
+                    var columns = results[0].Keys.ToList();
+                    
+                    // Header
+                    sb.AppendLine("| " + string.Join(" | ", columns) + " |");
+                    sb.AppendLine("|" + string.Join("|", columns.Select(_ => "---")) + "|");
+                    
+                    // Rows
+                    foreach (var row in rowsToShow)
+                    {
+                        var values = columns.Select(col => 
+                        {
+                            var val = row[col];
+                            return val == null ? "NULL" : val.ToString();
+                        });
+                        sb.AppendLine("| " + string.Join(" | ", values) + " |");
+                    }
+
+                    if (results.Count > 20)
+                    {
+                        sb.AppendLine($"... and {results.Count - 20} more rows");
+                    }
+                }
+
+                sb.AppendLine();
+                sb.AppendLine("INSTRUCTIONS:");
+                sb.AppendLine("- Answer the user's question based ONLY on these results");
+                sb.AppendLine("- If results show a count, state the number clearly");
+                sb.AppendLine("- If results show a list, present it in a formatted markdown table");
+                sb.AppendLine("- Include the total number of results");
+                sb.AppendLine("- Be helpful but factual - do NOT add information not in the results");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("YOUR RESPONSE (in the same language as the question):");
+
+            return sb.ToString();
+        }
+
+        private string FormatResultsAsTable(List<Dictionary<string, object>> results)
+        {
+            if (results == null || !results.Any())
+            {
+                return "**No se encontraron resultados.**";
+            }
+
+            var sb = new StringBuilder();
+            
+            // Si es un solo valor (como COUNT)
+            if (results.Count == 1 && results[0].Count == 1)
+            {
+                var value = results[0].First().Value;
+                return $"**Resultado:** {value}";
+            }
+
+            // Tabla markdown
+            sb.AppendLine();
+            
+            // Headers
+            var columns = results[0].Keys.ToList();
+            sb.AppendLine("| " + string.Join(" | ", columns) + " |");
+            sb.AppendLine("|" + string.Join("|", columns.Select(c => "---")) + "|");
+
+            // Rows (máximo 50 para no saturar la vista)
+            foreach (var row in results.Take(50))
+            {
+                sb.AppendLine("| " + string.Join(" | ", columns.Select(c => row[c]?.ToString() ?? "NULL")) + " |");
+            }
+
+            if (results.Count > 50)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"*... y {results.Count - 50} filas más*");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"**Total de registros:** {results.Count}");
+
+            return sb.ToString();
+        }
+
+        private string ExtractSqlFromResponse(string response)
+        {
+            // Limpiar markdown code blocks
+            var sql = response.Trim();
+
+            // Remover ```sql o ``` al inicio
+            if (sql.StartsWith("```sql", StringComparison.OrdinalIgnoreCase))
+            {
+                sql = sql.Substring(6).Trim();
+            }
+            else if (sql.StartsWith("```"))
+            {
+                sql = sql.Substring(3).Trim();
+            }
+
+            // Remover ``` al final
+            if (sql.EndsWith("```"))
+            {
+                sql = sql.Substring(0, sql.Length - 3).Trim();
+            }
+
+            // Tomar solo la primera sentencia SQL
+            var lines = sql.Split('\n');
+            var sqlLines = new List<string>();
+
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedLine))
+                    continue;
+
+                // Si la línea parece ser SQL
+                if (trimmedLine.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+                    trimmedLine.StartsWith("WITH", StringComparison.OrdinalIgnoreCase) ||
+                    sqlLines.Any())
+                {
+                    sqlLines.Add(trimmedLine);
+
+                    // Si termina con ; es el final
+                    if (trimmedLine.EndsWith(";"))
+                        break;
+                }
+            }
+
+            return sqlLines.Any() ? string.Join(" ", sqlLines) : sql;
+        }
+    }
+}
