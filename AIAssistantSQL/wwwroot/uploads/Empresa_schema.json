@@ -1,0 +1,355 @@
+{
+  "DatabaseName": "Empresa",
+  "DatabaseType": 0,
+  "Tables": [
+    {
+      "TableName": "__EFMigrationsHistory",
+      "Columns": [
+        {
+          "ColumnName": "MigrationId",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 150,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "ProductVersion",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 32,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "MigrationId"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Equipos",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre_Valor",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Gastos",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Descripcion_Valor",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Nombre_Valor",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Logs",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Mensaje",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Fecha",
+          "DataType": "datetime2",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UsuarioId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "GastoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "UsuarioId",
+          "ReferencedTable": "Usuarios",
+          "ReferencedColumn": "Id"
+        },
+        {
+          "ColumnName": "GastoId",
+          "ReferencedTable": "Gastos",
+          "ReferencedColumn": "Id"
+        }
+      ]
+    },
+    {
+      "TableName": "MetodoPagos",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre_Valor",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Pagos",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Monto",
+          "DataType": "float",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "GastoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "MetodoPagoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Descripcion_Valor",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "UsuarioId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Discriminator",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": 21,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaInicio",
+          "DataType": "datetime2",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaFin",
+          "DataType": "datetime2",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "FechaPago",
+          "DataType": "datetime2",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "NumeroPago",
+          "DataType": "int",
+          "IsNullable": true,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "GastoId",
+          "ReferencedTable": "Gastos",
+          "ReferencedColumn": "Id"
+        },
+        {
+          "ColumnName": "MetodoPagoId",
+          "ReferencedTable": "MetodoPagos",
+          "ReferencedColumn": "Id"
+        },
+        {
+          "ColumnName": "UsuarioId",
+          "ReferencedTable": "Usuarios",
+          "ReferencedColumn": "Id"
+        }
+      ]
+    },
+    {
+      "TableName": "Roles",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": []
+    },
+    {
+      "TableName": "Usuarios",
+      "Columns": [
+        {
+          "ColumnName": "Id",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": true
+        },
+        {
+          "ColumnName": "Nombre_Valor",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Apellido",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Email",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "Password",
+          "DataType": "nvarchar",
+          "IsNullable": false,
+          "MaxLength": -1,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "EquipoId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        },
+        {
+          "ColumnName": "RolId",
+          "DataType": "int",
+          "IsNullable": false,
+          "MaxLength": null,
+          "IsIdentity": false
+        }
+      ],
+      "PrimaryKeys": [
+        "Id"
+      ],
+      "ForeignKeys": [
+        {
+          "ColumnName": "EquipoId",
+          "ReferencedTable": "Equipos",
+          "ReferencedColumn": "Id"
+        },
+        {
+          "ColumnName": "RolId",
+          "ReferencedTable": "Roles",
+          "ReferencedColumn": "Id"
+        }
+      ]
+    }
+  ],
+  "LoadedAt": "2025-10-15T23:58:11.640524-03:00"
+}

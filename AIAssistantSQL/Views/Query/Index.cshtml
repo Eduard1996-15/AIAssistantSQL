@@ -1,4 +1,4 @@
-@model QueryViewModel
+@model AIAssistantSQL.Models.ViewModels.QueryViewModel
 @{
     ViewData["Title"] = "Consultas en Lenguaje Natural";
 }
@@ -15,7 +15,7 @@
                 </button>
                 <form asp-controller="Query" asp-action="NewConversation" method="post" class="d-inline">
                     <button type="submit" class="btn btn-outline-primary">
-                        <i class="bi bi-plus-circle"></i> Nueva Conversaci�n
+                        <i class="bi bi-plus-circle"></i> Nueva Conversaci�n
                     </button>
                 </form>
             </div>
@@ -33,12 +33,12 @@
         {
             <div class="alert alert-danger">
                 <i class="bi bi-exclamation-triangle-fill"></i> 
-                <strong>No hay conexi�n activa.</strong> 
+                <strong>No hay conexi�n activa.</strong> 
                 <a asp-controller="Database" asp-action="Index" class="alert-link">Configura tu base de datos primero</a>
             </div>
         }
         
-        <p class="lead">Conversa con tu base de datos usando lenguaje natural. La IA recordar� el contexto de tus preguntas anteriores.</p>
+        <p class="lead">Conversa con tu base de datos usando lenguaje natural. La IA recordar� el contexto de tus preguntas anteriores.</p>
     </div>
 </div>
 
@@ -49,15 +49,41 @@
                 <h5 class="mb-0"><i class="bi bi-chat-dots"></i> Nueva Consulta</h5>
             </div>
             <div class="card-body">
+                <!-- Campos ocultos para información de base de datos (usados en exportaciones) -->
+                <input type="hidden" id="currentDatabaseName" value="@Model.DatabaseName" />
+                <input type="hidden" id="currentDatabaseType" value="@Model.DatabaseType" />
+                <input type="hidden" id="currentTableNames" value="@string.Join(", ", Model.TableNames)" />
+                
+                <!-- Selector de Modelo IA -->
+                <div class="mb-3">
+                    <label for="modelSelector" class="form-label">
+                        <i class="bi bi-cpu"></i> Modelo de IA:
+                    </label>
+                    <div class="input-group">
+                        <select class="form-select" id="modelSelector" @(!Model.HasActiveConnection ? "disabled" : "")>
+                            <option value="">Cargando modelos...</option>
+                        </select>
+                        <button class="btn btn-outline-secondary" type="button" id="refreshModelsBtn" title="Actualizar lista de modelos">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                        <button class="btn btn-success" type="button" id="changeModelBtn" title="Cambiar al modelo seleccionado">
+                            <i class="bi bi-check-circle"></i> Cambiar
+                        </button>
+                    </div>
+                    <div class="form-text" id="modelDescription">
+                        Selecciona el modelo de IA que mejor se adapte a tu consulta
+                    </div>
+                </div>
+
                 <div class="mb-3">
                     <label for="naturalLanguageQuery" class="form-label">Escribe tu pregunta:</label>
                     <textarea class="form-control" id="naturalLanguageQuery" rows="3" 
-                              placeholder="Ejemplo: �Cu�ntos usuarios activos hay?" 
+                              placeholder="Ejemplo: ¿Cuántos usuarios activos hay?" 
                               @(!Model.HasActiveConnection ? "disabled" : "")></textarea>
                     <div class="form-text">
                         @if (Model.HasActiveConnection)
                         {
-                            <span>Escribe tu consulta en lenguaje natural. La IA la convertir� en SQL, la ejecutar� y te dar� una respuesta clara.</span>
+                            <span>Escribe tu consulta en lenguaje natural. La IA la convertirá en SQL, la ejecutará y te dará una respuesta clara.</span>
                         }
                         else
                         {
@@ -81,7 +107,7 @@
             </div>
         </div>
 
-        <!-- �rea de Respuesta de la IA -->
+        <!-- �rea de Respuesta de la IA -->
         <div id="aiResponseArea" class="d-none">
             <div class="card mb-4 border-success">
                 <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
@@ -103,6 +129,16 @@
 
                     <!-- Vista de Tabla de Datos -->
                     <div id="tableDataView" class="d-none">
+                        <!-- Botones de Exportación -->
+                        <div class="mb-3 d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-success btn-sm" id="exportCsvBtn" onclick="exportToCSV()">
+                                <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV
+                            </button>
+                            <button type="button" class="btn btn-danger btn-sm" id="exportPdfBtn" onclick="exportToPDF()">
+                                <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
+                            </button>
+                        </div>
+                        
                         <div class="table-responsive">
                             <table class="table table-striped table-hover table-sm" id="resultsTableMain">
                                 <thead class="table-dark" id="resultsTableHeadMain"></thead>
@@ -110,20 +146,20 @@
                             </table>
                         </div>
                         <div class="alert alert-info mt-3" id="rowCountInfo">
-                            <!-- Se llenar� din�micamente -->
+                            <!-- Se llenará dinámicamente -->
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- �rea de Detalles T�cnicos (colapsable) -->
+        <!-- �rea de Detalles T�cnicos (colapsable) -->
         <div id="technicalDetailsArea" class="d-none">
             <div class="accordion mb-4" id="technicalAccordion">
                 <div class="accordion-item">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sqlDetails">
-                            <i class="bi bi-code-square me-2"></i> Detalles T�cnicos (SQL Generado)
+                            <i class="bi bi-code-square me-2"></i> Detalles T�cnicos (SQL Generado)
                         </button>
                     </h2>
                     <div id="sqlDetails" class="accordion-collapse collapse" data-bs-parent="#technicalAccordion">
@@ -136,7 +172,7 @@
             </div>
         </div>
 
-        <!-- �rea de Error -->
+        <!-- �rea de Error -->
         <div id="errorArea" class="d-none">
             <div class="alert alert-danger" role="alert">
                 <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Error</h5>
@@ -152,7 +188,7 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Historial de Conversaci�n</h5>
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Historial de Conversaci�n</h5>
                     <form asp-controller="Query" asp-action="ClearHistory" method="post" class="d-inline">
                         <button type="submit" class="btn btn-sm btn-outline-light">
                             <i class="bi bi-trash"></i> Limpiar
@@ -166,7 +202,7 @@
                             <div class="conversation-message mb-3 p-3 border rounded @(item.Success ? "border-success" : "border-danger")">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <div class="user-question">
-                                        <strong><i class="bi bi-person-circle"></i> T�:</strong> @item.NaturalLanguageQuery
+                                        <strong><i class="bi bi-person-circle"></i> T�:</strong> @item.NaturalLanguageQuery
                                     </div>
                                     <small class="text-muted">@item.Timestamp.ToString("HH:mm:ss")</small>
                                 </div>
@@ -234,7 +270,7 @@
             white-space: pre-wrap;
         }
 
-        /* Transici�n suave entre vistas */
+        /* Transici�n suave entre vistas */
         .fade-in {
             opacity: 1;
             transition: opacity 0.3s ease-in;
@@ -327,7 +363,7 @@
         }
 
         $(document).ready(function() {
-            // Bot�n para refrescar historial manualmente
+            // Bot�n para refrescar historial manualmente
             $('#refreshHistoryBtn').click(function() {
                 location.reload();
             });
@@ -371,21 +407,65 @@
                                 renderDataTable(response.results, response.rowCount, response.executionTime);
                             }
 
-                            // Mostrar �rea de respuesta
+                            // Mostrar �rea de respuesta
                             $('#aiResponseArea').removeClass('d-none');
 
                             // Restablecer a vista de IA por defecto
                             toggleView('ai');
 
-                            // Mostrar detalles t�cnicos
+                            // Mostrar detalles técnicos
                             $('#generatedSql').text(response.generatedSQL);
-                            $('#executionInfo').html(
-                                '<small class="text-muted">' +
+                            
+                            // Construir info de ejecución con métricas de tiempo
+                            let executionInfoHtml = '<small class="text-muted">' +
                                 '<i class="bi bi-check-circle text-success"></i> ' +
                                 'Ejecutado en <strong>' + response.executionTime + '</strong> - ' +
-                                '<strong>' + response.rowCount + '</strong> filas' +
-                                '</small>'
-                            );
+                                '<strong>' + response.rowCount + '</strong> filas';
+                            
+                            // Función auxiliar para formatear TimeSpan
+                            function formatTimeSpan(timeString) {
+                                if (!timeString) return null;
+                                // TimeSpan viene como "00:00:00.1234567" o similar
+                                const parts = timeString.split(':');
+                                if (parts.length >= 3) {
+                                    const hours = parseInt(parts[0]);
+                                    const minutes = parseInt(parts[1]);
+                                    const secondsParts = parts[2].split('.');
+                                    const seconds = parseInt(secondsParts[0]);
+                                    const ms = secondsParts.length > 1 ? Math.round(parseInt(secondsParts[1].substring(0, 3))) : 0;
+                                    
+                                    if (hours > 0) return hours + 'h ' + minutes + 'm ' + seconds + 's';
+                                    if (minutes > 0) return minutes + 'm ' + seconds + 's';
+                                    if (seconds > 0) return seconds + '.' + ms + 's';
+                                    return ms + 'ms';
+                                }
+                                return timeString;
+                            }
+                            
+                            // Agregar métricas de tiempo si están disponibles
+                            if (response.aiResponseTime || response.databaseResponseTime || response.totalResponseTime) {
+                                executionInfoHtml += '<br><div class="mt-2 p-2 bg-light rounded border">' +
+                                    '<strong>📊 Métricas de Rendimiento:</strong><br>';
+                                
+                                if (response.aiResponseTime) {
+                                    const aiTime = formatTimeSpan(response.aiResponseTime);
+                                    executionInfoHtml += '<span class="badge bg-info me-2">🤖 IA: ' + aiTime + '</span>';
+                                }
+                                if (response.databaseResponseTime) {
+                                    const dbTime = formatTimeSpan(response.databaseResponseTime);
+                                    executionInfoHtml += '<span class="badge bg-primary me-2">💾 BD: ' + dbTime + '</span>';
+                                }
+                                if (response.totalResponseTime) {
+                                    const totalTime = formatTimeSpan(response.totalResponseTime);
+                                    executionInfoHtml += '<span class="badge bg-success">⏱️ Total: ' + totalTime + '</span>';
+                                }
+                                
+                                executionInfoHtml += '</div>';
+                            }
+                            
+                            executionInfoHtml += '</small>';
+                            
+                            $('#executionInfo').html(executionInfoHtml);
 
                             $('#technicalDetailsArea').removeClass('d-none');
                         } else {
@@ -402,7 +482,7 @@
                         $('#loadingSpinner').addClass('d-none');
                         $('#executeQueryBtn').prop('disabled', false);
                         
-                        $('#errorMessage').html('<strong>Error de comunicaci�n:</strong> ' + error);
+                        $('#errorMessage').html('<strong>Error de comunicaci�n:</strong> ' + error);
                         $('#errorArea').removeClass('d-none');
                     }
                 });
@@ -424,6 +504,427 @@
                     }
                 }
             });
+        });
+
+        // ========================================
+        // FUNCIONES DE EXPORTACIÓN
+        // ========================================
+
+        /**
+         * Exporta los resultados actuales a CSV
+         */
+        function exportToCSV() {
+            if (!currentResults || currentResults.length === 0) {
+                alert('No hay datos para exportar');
+                return;
+            }
+
+            try {
+                // Obtener columnas
+                const columns = Object.keys(currentResults[0]);
+                
+                // Construir CSV
+                let csv = columns.join(',') + '\n';
+                
+                currentResults.forEach(function(row) {
+                    const values = columns.map(function(col) {
+                        let value = row[col];
+                        
+                        // Manejar null
+                        if (value === null || value === undefined) {
+                            return '';
+                        }
+                        
+                        // Escapar comillas y comas
+                        value = String(value);
+                        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                            value = '"' + value.replace(/"/g, '""') + '"';
+                        }
+                        
+                        return value;
+                    });
+                    
+                    csv += values.join(',') + '\n';
+                });
+                
+                // Descargar archivo
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `query_results_${timestamp}.csv`);
+                link.style.visibility = 'hidden';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                console.log('✅ CSV exportado exitosamente');
+            } catch (error) {
+                console.error('❌ Error exportando CSV:', error);
+                alert('Error al exportar CSV: ' + error.message);
+            }
+        }
+
+        /**
+         * Exporta los resultados actuales a PDF usando jsPDF
+         */
+        function exportToPDF() {
+            if (!currentResults || currentResults.length === 0) {
+                alert('No hay datos para exportar');
+                return;
+            }
+
+            // Verificar si jsPDF está cargado
+            if (typeof window.jspdf === 'undefined') {
+                alert('Cargando biblioteca PDF...');
+                
+                // Cargar jsPDF dinámicamente
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                script.onload = function() {
+                    // Cargar jsPDF-AutoTable
+                    const autoTableScript = document.createElement('script');
+                    autoTableScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js';
+                    autoTableScript.onload = function() {
+                        generatePDF();
+                    };
+                    document.head.appendChild(autoTableScript);
+                };
+                document.head.appendChild(script);
+            } else {
+                generatePDF();
+            }
+        }
+
+        /**
+         * Genera el PDF con los datos
+         */
+        function generatePDF() {
+            try {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('l', 'mm', 'a4'); // Landscape, milímetros, A4
+                
+                // Obtener información de la base de datos
+                const databaseName = document.getElementById('currentDatabaseName')?.value || 'Desconocida';
+                const databaseType = document.getElementById('currentDatabaseType')?.value || 'Desconocido';
+                const tableNames = document.getElementById('currentTableNames')?.value || '';
+                
+                // Título principal
+                doc.setFontSize(16);
+                doc.setFont(undefined, 'bold');
+                doc.text('Resultados de Consulta SQL', 14, 15);
+                
+                // Información de la base de datos
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'normal');
+                const fecha = new Date().toLocaleString('es-ES');
+                doc.text(`Fecha: ${fecha}`, 14, 22);
+                
+                doc.setFont(undefined, 'bold');
+                doc.text(`Base de Datos: `, 14, 28);
+                doc.setFont(undefined, 'normal');
+                doc.text(`${databaseName} (${databaseType})`, 48, 28);
+                
+                // Tablas disponibles (si hay espacio)
+                if (tableNames) {
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`Tablas: `, 14, 34);
+                    doc.setFont(undefined, 'normal');
+                    
+                    // Limitar la longitud del texto de tablas para que no se salga de la página
+                    const maxTableTextLength = 220; // caracteres aproximados que caben en una línea
+                    let displayTables = tableNames;
+                    if (tableNames.length > maxTableTextLength) {
+                        const tablelist = tableNames.split(', ');
+                        displayTables = tablelist.slice(0, Math.floor(tablelist.length / 2)).join(', ') + '...';
+                    }
+                    doc.text(displayTables, 34, 34);
+                }
+                
+                // Obtener columnas y datos
+                const columns = Object.keys(currentResults[0]);
+                const rows = currentResults.map(function(row) {
+                    return columns.map(function(col) {
+                        const value = row[col];
+                        return value === null || value === undefined ? '' : String(value);
+                    });
+                });
+                
+                // Tabla con autoTable
+                doc.autoTable({
+                    head: [columns],
+                    body: rows,
+                    startY: 40,
+                    styles: {
+                        fontSize: 8,
+                        cellPadding: 2
+                    },
+                    headStyles: {
+                        fillColor: [52, 58, 64],
+                        textColor: 255,
+                        fontStyle: 'bold'
+                    },
+                    alternateRowStyles: {
+                        fillColor: [245, 245, 245]
+                    },
+                    margin: { top: 28 }
+                });
+                
+                // Footer con información de base de datos y número de registros
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setTextColor(100);
+                    
+                    // Línea izquierda: Base de datos
+                    doc.text(
+                        `BD: ${databaseName} | Total registros: ${currentResults.length}`,
+                        14,
+                        doc.internal.pageSize.height - 10
+                    );
+                    
+                    // Línea derecha: Paginación
+                    const pageText = `Página ${i} de ${pageCount}`;
+                    const pageWidth = doc.internal.pageSize.width;
+                    const textWidth = doc.getTextWidth(pageText);
+                    doc.text(
+                        pageText,
+                        pageWidth - textWidth - 14,
+                        doc.internal.pageSize.height - 10
+                    );
+                    
+                    doc.setTextColor(0); // Restaurar color negro
+                }
+                
+                // Descargar
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                doc.save(`query_results_${timestamp}.pdf`);
+                
+                console.log('✅ PDF exportado exitosamente');
+            } catch (error) {
+                console.error('❌ Error exportando PDF:', error);
+                alert('Error al exportar PDF: ' + error.message);
+            }
+        }
+
+        // ===========================================
+        // SELECTOR DE MODELOS DE IA
+        // ===========================================
+
+        // Mapa de descripciones para cada modelo
+        const modelDescriptions = {
+            'codellama': {
+                icon: '⚡',
+                description: 'Rápido y eficiente - Ideal para consultas simples',
+                size: '7B'
+            },
+            'deepseek-coder:33b': {
+                icon: '🧠',
+                description: 'Pensamiento complejo - Recomendado para consultas difíciles',
+                size: '33B'
+            },
+            'deepseek-coder': {
+                icon: '🧠',
+                description: 'Pensamiento complejo - Recomendado para consultas difíciles',
+                size: '33B'
+            },
+            'llama3.2': {
+                icon: '⚖️',
+                description: 'Equilibrado - Buen rendimiento general',
+                size: '8B'
+            },
+            'llama3': {
+                icon: '⚖️',
+                description: 'Equilibrado - Buen rendimiento general',
+                size: '8B'
+            },
+            'mistral': {
+                icon: '🎯',
+                description: 'Preciso - Bueno para consultas técnicas',
+                size: '7B'
+            },
+            'qwen': {
+                icon: '🚀',
+                description: 'Versátil - Multilenguaje y eficiente',
+                size: '7B'
+            }
+        };
+
+        // Función para obtener la descripción del modelo
+        function getModelInfo(modelName) {
+            // Buscar coincidencias exactas o parciales
+            for (const [key, value] of Object.entries(modelDescriptions)) {
+                if (modelName.includes(key) || key.includes(modelName)) {
+                    return value;
+                }
+            }
+            
+            // Descripción por defecto basada en el tamaño si lo detectamos
+            if (modelName.includes('70b') || modelName.includes('65b')) {
+                return { icon: '🦾', description: 'Modelo grande - Máxima precisión', size: '70B+' };
+            } else if (modelName.includes('33b') || modelName.includes('34b')) {
+                return { icon: '🧠', description: 'Modelo grande - Alta complejidad', size: '33B' };
+            } else if (modelName.includes('13b') || modelName.includes('14b')) {
+                return { icon: '💪', description: 'Modelo medio - Buen balance', size: '13B' };
+            } else if (modelName.includes('7b') || modelName.includes('8b')) {
+                return { icon: '⚡', description: 'Modelo pequeño - Rápido', size: '7B' };
+            }
+            
+            return { icon: '🤖', description: 'Modelo de IA general', size: '?' };
+        }
+
+        // Cargar modelos disponibles
+        async function loadAvailableModels() {
+            try {
+                console.log('🔄 Cargando modelos disponibles...');
+                const response = await fetch('/Settings/GetOllamaModels');
+                
+                if (!response.ok) {
+                    throw new Error('Error al cargar modelos: ' + response.statusText);
+                }
+                
+                const data = await response.json();
+                const select = document.getElementById('modelSelector');
+                const descriptionDiv = document.getElementById('modelDescription');
+                
+                if (!data.models || data.models.length === 0) {
+                    select.innerHTML = '<option value="">No hay modelos disponibles</option>';
+                    descriptionDiv.innerHTML = '<span class="text-danger">⚠️ No se encontraron modelos de Ollama. Asegúrate de que Ollama esté ejecutándose.</span>';
+                    return;
+                }
+                
+                // Limpiar opciones
+                select.innerHTML = '';
+                
+                // Agregar modelos
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    const info = getModelInfo(model.name);
+                    option.textContent = `${info.icon} ${model.name} (${info.size}) - ${info.description}`;
+                    
+                    // Marcar el modelo actual como seleccionado
+                    if (model.name === data.currentModel) {
+                        option.selected = true;
+                        const currentInfo = getModelInfo(model.name);
+                        descriptionDiv.innerHTML = `
+                            <span class="badge bg-success">Actual</span> 
+                            ${currentInfo.icon} <strong>${model.name}</strong> (${currentInfo.size}): ${currentInfo.description}
+                        `;
+                    }
+                    
+                    select.appendChild(option);
+                });
+                
+                console.log('✅ Modelos cargados:', data.models.length);
+            } catch (error) {
+                console.error('❌ Error cargando modelos:', error);
+                const select = document.getElementById('modelSelector');
+                const descriptionDiv = document.getElementById('modelDescription');
+                select.innerHTML = '<option value="">Error al cargar modelos</option>';
+                descriptionDiv.innerHTML = '<span class="text-danger">⚠️ Error: ' + error.message + '</span>';
+            }
+        }
+
+        // Actualizar descripción cuando cambia la selección
+        document.getElementById('modelSelector')?.addEventListener('change', function() {
+            const selectedModel = this.value;
+            const descriptionDiv = document.getElementById('modelDescription');
+            
+            if (selectedModel) {
+                const info = getModelInfo(selectedModel);
+                descriptionDiv.innerHTML = `${info.icon} <strong>${selectedModel}</strong> (${info.size}): ${info.description}`;
+            } else {
+                descriptionDiv.innerHTML = 'Selecciona un modelo de IA';
+            }
+        });
+
+        // Cambiar modelo de IA
+        document.getElementById('changeModelBtn')?.addEventListener('click', async function() {
+            const selectedModel = document.getElementById('modelSelector').value;
+            
+            if (!selectedModel) {
+                alert('⚠️ Por favor selecciona un modelo primero');
+                return;
+            }
+            
+            const button = this;
+            const originalHTML = button.innerHTML;
+            
+            try {
+                button.disabled = true;
+                button.innerHTML = '<i class="bi bi-hourglass-split"></i> Cambiando...';
+                
+                console.log('🔄 Cambiando modelo a:', selectedModel);
+                
+                const response = await fetch('/Settings/ChangeModel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ modelName: selectedModel })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Error al cambiar modelo: ' + response.statusText);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const info = getModelInfo(selectedModel);
+                    document.getElementById('modelDescription').innerHTML = `
+                        <span class="badge bg-success">Actual</span> 
+                        ${info.icon} <strong>${selectedModel}</strong> (${info.size}): ${info.description}
+                    `;
+                    
+                    // Mostrar notificación de éxito
+                    const notification = document.createElement('div');
+                    notification.className = 'alert alert-success alert-dismissible fade show position-fixed';
+                    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+                    notification.innerHTML = `
+                        <strong>✅ Modelo cambiado</strong><br>
+                        Ahora usando: ${selectedModel}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    document.body.appendChild(notification);
+                    
+                    setTimeout(() => notification.remove(), 5000);
+                    
+                    console.log('✅ Modelo cambiado exitosamente a:', selectedModel);
+                } else {
+                    throw new Error(result.message || 'Error desconocido');
+                }
+            } catch (error) {
+                console.error('❌ Error cambiando modelo:', error);
+                alert('❌ Error al cambiar modelo: ' + error.message);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalHTML;
+            }
+        });
+
+        // Refrescar lista de modelos
+        document.getElementById('refreshModelsBtn')?.addEventListener('click', function() {
+            const button = this;
+            const originalHTML = button.innerHTML;
+            
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+            
+            loadAvailableModels().finally(() => {
+                button.disabled = false;
+                button.innerHTML = originalHTML;
+            });
+        });
+
+        // Cargar modelos al cargar la página
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAvailableModels();
         });
     </script>
 }

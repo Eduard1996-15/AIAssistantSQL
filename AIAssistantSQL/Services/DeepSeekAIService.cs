@@ -69,6 +69,15 @@ namespace AIAssistantSQL.Services
             _configuration["DeepSeekAI:Model"] = modelName;
         }
 
+        /// <summary>
+        /// Limpia la cach√© de modelos para forzar una actualizaci√≥n
+        /// </summary>
+        public void ClearModelsCache()
+        {
+            // DeepSeek AI no necesita cach√© de modelos ya que usa modelos predefinidos
+            _logger.LogInformation("üóëÔ∏è ClearModelsCache llamado pero DeepSeek AI no necesita cach√© de modelos");
+        }
+
         public async Task<List<OllamaModel>> GetAvailableModelsAsync()
         {
             return new List<OllamaModel>
@@ -77,13 +86,13 @@ namespace AIAssistantSQL.Services
                 {
                     Name = "deepseek-chat",
                     Description = "Modelo principal de DeepSeek - Excelente para SQL",
-                    Size = "Cloud (gratis con lÌmites)"
+                    Size = "Cloud (gratis con lÔøΩmites)"
                 },
                 new OllamaModel
                 {
                     Name = "deepseek-coder",
-                    Description = "Especializado en cÛdigo - Muy preciso para SQL complejo",
-                    Size = "Cloud (gratis con lÌmites)"
+                    Description = "Especializado en cÔøΩdigo - Muy preciso para SQL complejo",
+                    Size = "Cloud (gratis con lÔøΩmites)"
                 }
             };
         }
@@ -158,7 +167,7 @@ namespace AIAssistantSQL.Services
             string originalQuestion,
             string executedSql,
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory = null)
+            List<string>? conversationHistory = null)
         {
             try
             {
@@ -192,7 +201,7 @@ namespace AIAssistantSQL.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("? Error al interpretar resultados con DeepSeek");
-                    return $"? Consulta ejecutada exitosamente ({results.Count} registros encontrados).\n\n*Nota: No se pudo generar interpretaciÛn con IA.*";
+                    return $"? Consulta ejecutada exitosamente ({results.Count} registros encontrados).\n\n*Nota: No se pudo generar interpretaciÔøΩn con IA.*";
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -206,7 +215,7 @@ namespace AIAssistantSQL.Services
 
                     if (!string.IsNullOrWhiteSpace(content))
                     {
-                        _logger.LogInformation("? InterpretaciÛn generada");
+                        _logger.LogInformation("? InterpretaciÔøΩn generada");
                         return content;
                     }
                 }
@@ -216,7 +225,7 @@ namespace AIAssistantSQL.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error interpretando resultados con DeepSeek AI");
-                return $"? Consulta ejecutada exitosamente ({results.Count} registros encontrados).\n\n*Nota: No se pudo generar interpretaciÛn con IA.*";
+                return $"? Consulta ejecutada exitosamente ({results.Count} registros encontrados).\n\n*Nota: No se pudo generar interpretaciÔøΩn con IA.*";
             }
         }
 
@@ -270,10 +279,10 @@ namespace AIAssistantSQL.Services
         }
 
         private string BuildInterpretationPrompt(
-            string originalQuestion,
-            string executedSql,
+            string originalQuestion, 
+            string executedSql, 
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory)
+            List<string>? conversationHistory)
         {
             var sb = new System.Text.StringBuilder();
 
@@ -284,7 +293,7 @@ namespace AIAssistantSQL.Services
             sb.AppendLine("2. Be clear and concise");
             sb.AppendLine("3. Use ONLY the data from the results provided");
             sb.AppendLine("4. If there's 1 result and user asked for 'the most/least', say 'EL documento es...' (singular)");
-            sb.AppendLine("5. If there are multiple results, say 'EncontrÈ X documentos...' (plural)");
+            sb.AppendLine("5. If there are multiple results, say 'EncontrÔøΩ X documentos...' (plural)");
             sb.AppendLine("6. Present data in markdown tables");
             sb.AppendLine();
             sb.AppendLine($"USER QUESTION: {originalQuestion}");

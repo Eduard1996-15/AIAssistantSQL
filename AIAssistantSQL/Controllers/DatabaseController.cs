@@ -1,5 +1,6 @@
 using AIAssistantSQL.Interfaces;
 using AIAssistantSQL.Models;
+using AIAssistantSQL.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AIAssistantSQL.Controllers
@@ -11,7 +12,7 @@ namespace AIAssistantSQL.Controllers
         private readonly ILogger<DatabaseController> _logger;
         private readonly IConfiguration _configuration;
 
-        // Guardar la configuración de conexión en memoria (en producción usar BD o caché distribuido)
+        // Guardar la configuraciï¿½n de conexiï¿½n en memoria (en producciï¿½n usar BD o cachï¿½ distribuido)
         private static DatabaseConnectionConfig? _currentConnection;
 
         public DatabaseController(
@@ -51,7 +52,7 @@ namespace AIAssistantSQL.Controllers
             {
                 if (schemaFile == null || schemaFile.Length == 0)
                 {
-                    TempData["Error"] = "Por favor seleccione un archivo válido";
+                    TempData["Error"] = "Por favor seleccione un archivo vï¿½lido";
                     return RedirectToAction(nameof(Index));
                 }
 
@@ -69,7 +70,7 @@ namespace AIAssistantSQL.Controllers
                 var schema = await _schemaLoaderService.LoadSchemaFromFileAsync(filePath);
 
                 TempData["Success"] = $"Esquema cargado exitosamente: {schema.DatabaseName} - {schema.Tables.Count} tablas";
-                TempData["Warning"] = "Recuerda configurar la cadena de conexión para poder ejecutar consultas";
+                TempData["Warning"] = "Recuerda configurar la cadena de conexiï¿½n para poder ejecutar consultas";
                 
                 return RedirectToAction(nameof(Index));
             }
@@ -88,34 +89,34 @@ namespace AIAssistantSQL.Controllers
             {
                 if (string.IsNullOrWhiteSpace(connectionString))
                 {
-                    TempData["Error"] = "Por favor ingrese una cadena de conexión válida";
+                    TempData["Error"] = "Por favor ingrese una cadena de conexiï¿½n vï¿½lida";
                     return RedirectToAction(nameof(Index));
                 }
 
-                // CORRECCIÓN: Limpiar dobles barras invertidas (de \\ a \)
+                // CORRECCIï¿½N: Limpiar dobles barras invertidas (de \\ a \)
                 // El string literal en C# necesita escape, entonces:
                 // - Buscamos: @"\\" (que es \\)
                 // - Reemplazamos con: @"\" (que es \)
                 connectionString = connectionString.Replace(@"\\", @"\");
                 
                 _logger.LogInformation($"Intentando conectar a {databaseType}...");
-                _logger.LogInformation($"Cadena de conexión original recibida");
-                _logger.LogInformation($"Cadena de conexión limpia: {connectionString}");
+                _logger.LogInformation($"Cadena de conexiï¿½n original recibida");
+                _logger.LogInformation($"Cadena de conexiï¿½n limpia: {connectionString}");
 
-                // Probar conexión primero
+                // Probar conexiï¿½n primero
                 var isConnected = await _queryRepository.TestConnectionAsync(connectionString, databaseType);
                 if (!isConnected)
                 {
-                    TempData["Error"] = $"No se pudo conectar a la base de datos. Verifique la cadena de conexión.<br/>Cadena utilizada: {connectionString}";
+                    TempData["Error"] = $"No se pudo conectar a la base de datos. Verifique la cadena de conexiï¿½n.<br/>Cadena utilizada: {connectionString}";
                     return RedirectToAction(nameof(Index));
                 }
 
-                _logger.LogInformation("Conexión exitosa, extrayendo esquema...");
+                _logger.LogInformation("Conexiï¿½n exitosa, extrayendo esquema...");
 
                 // Cargar esquema
                 var schema = await _schemaLoaderService.LoadSchemaFromConnectionStringAsync(connectionString, databaseType);
 
-                // Guardar la configuración de conexión
+                // Guardar la configuraciï¿½n de conexiï¿½n
                 _currentConnection = new DatabaseConnectionConfig
                 {
                     ConnectionString = connectionString,
@@ -123,7 +124,7 @@ namespace AIAssistantSQL.Controllers
                     DatabaseName = schema.DatabaseName
                 };
 
-                // También guardar en sesión como fallback
+                // Tambiï¿½n guardar en sesiï¿½n como fallback
                 HttpContext.Session.SetString("ConnectionString", connectionString);
                 HttpContext.Session.SetString("DatabaseType", databaseType.ToString());
                 HttpContext.Session.SetString("DatabaseName", schema.DatabaseName);
@@ -136,7 +137,7 @@ namespace AIAssistantSQL.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al conectar y cargar esquema");
-                TempData["Error"] = $"? Error: {ex.Message}<br/>Cadena de conexión: {connectionString}";
+                TempData["Error"] = $"? Error: {ex.Message}<br/>Cadena de conexiï¿½n: {connectionString}";
                 return RedirectToAction(nameof(Index));
             }
         }
@@ -148,14 +149,14 @@ namespace AIAssistantSQL.Controllers
             {
                 if (string.IsNullOrWhiteSpace(connectionString))
                 {
-                    TempData["Error"] = "Por favor ingrese una cadena de conexión válida";
+                    TempData["Error"] = "Por favor ingrese una cadena de conexiï¿½n vï¿½lida";
                     return RedirectToAction(nameof(Index));
                 }
 
                 // Limpiar dobles barras invertidas correctamente
                 connectionString = connectionString.Replace(@"\\", @"\");
                 
-                _logger.LogInformation($"Configurando cadena de conexión limpia: {connectionString}");
+                _logger.LogInformation($"Configurando cadena de conexiï¿½n limpia: {connectionString}");
 
                 var currentSchema = _schemaLoaderService.GetCurrentSchema();
                 if (currentSchema == null)
@@ -164,7 +165,7 @@ namespace AIAssistantSQL.Controllers
                     return RedirectToAction(nameof(Index));
                 }
 
-                // Guardar la configuración de conexión
+                // Guardar la configuraciï¿½n de conexiï¿½n
                 _currentConnection = new DatabaseConnectionConfig
                 {
                     ConnectionString = connectionString,
@@ -175,12 +176,12 @@ namespace AIAssistantSQL.Controllers
                 HttpContext.Session.SetString("ConnectionString", connectionString);
                 HttpContext.Session.SetString("DatabaseType", databaseType.ToString());
 
-                TempData["Success"] = "Cadena de conexión configurada correctamente. Ya puedes ejecutar consultas.";
+                TempData["Success"] = "Cadena de conexiï¿½n configurada correctamente. Ya puedes ejecutar consultas.";
                 return RedirectToAction(nameof(Index));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al configurar cadena de conexión");
+                _logger.LogError(ex, "Error al configurar cadena de conexiï¿½n");
                 TempData["Error"] = $"Error: {ex.Message}";
                 return RedirectToAction(nameof(Index));
             }
@@ -214,7 +215,7 @@ namespace AIAssistantSQL.Controllers
                 var filePath = Path.Combine(uploadsFolder, fileName);
                 await _schemaLoaderService.SaveSchemaToFileAsync(currentSchema, filePath);
 
-                TempData["Success"] = $"Esquema guardado exitosamente: {fileName}<br/>Ubicación: wwwroot/uploads/{fileName}";
+                TempData["Success"] = $"Esquema guardado exitosamente: {fileName}<br/>Ubicaciï¿½n: wwwroot/uploads/{fileName}";
                 return RedirectToAction(nameof(Index));
             }
             catch (Exception ex)

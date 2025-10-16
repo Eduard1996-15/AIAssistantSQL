@@ -1,0 +1,604 @@
+@model AIAssistantSQL.Models.ViewModels.ModelSelectorViewModel
+
+@{
+    ViewData["Title"] = "Selector de Modelos IA";
+}
+
+<div class="container-fluid">
+    <!-- Header responsive -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
+                <div class="mb-3 mb-md-0">
+                    <h2 class="h4 h-md-2">
+                        <i class="bi bi-cpu-fill text-primary"></i> 
+                        Selector de Modelos IA
+                    </h2>
+                    <p class="text-muted mb-0 small">
+                        Selecciona y compara diferentes modelos para optimizar las consultas SQL
+                    </p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="refreshModelsBtn">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        <span class="d-none d-sm-inline">Actualizar</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm" id="installModelsBtn">
+                        <i class="bi bi-download"></i>
+                        <span class="d-none d-sm-inline">Instalar Modelos</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Cards Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light">
+                <div class="card-body p-3 text-center">
+                    <div class="h5 mb-1 text-primary" id="currentModelName">@Model.CurrentModel</div>
+                    <small class="text-muted">Modelo Actual</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light">
+                <div class="card-body p-3 text-center">
+                    <div class="h5 mb-1 text-success" id="totalModelsCount">@Model.AvailableModels.Count</div>
+                    <small class="text-muted">Modelos Disponibles</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light">
+                <div class="card-body p-3 text-center">
+                    <div class="h5 mb-1 text-info" id="recommendedCount">@Model.AvailableModels.Count(m => m.IsRecommendedForSQL)</div>
+                    <small class="text-muted">Recomendados SQL</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light">
+                <div class="card-body p-3 text-center">
+                    <div class="h5 mb-1" id="ollamaStatus">
+                        @if (ViewBag.IsOllamaAvailable)
+                        {
+                            <span class="text-success">Online</span>
+                        }
+                        else
+                        {
+                            <span class="text-danger">Offline</span>
+                        }
+                    </div>
+                    <small class="text-muted">Estado Ollama</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter and Search Row -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-3">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label for="modelFilter" class="form-label small">Filtrar por tipo:</label>
+                            <select class="form-select form-select-sm" id="modelFilter">
+                                <option value="all">Todos los modelos</option>
+                                <option value="recommended">Solo recomendados para SQL</option>
+                                <option value="code">Especializados en código</option>
+                                <option value="general">Modelos generales</option>
+                                <option value="small">Modelos ligeros (< 4GB)</option>
+                                <option value="large">Modelos grandes (> 7GB)</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label for="modelSearch" class="form-label small">Buscar modelo:</label>
+                            <input type="text" class="form-control form-control-sm" id="modelSearch" placeholder="Buscar por nombre...">
+                        </div>
+                        <div class="col-12 col-lg-4 d-flex align-items-end">
+                            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="clearFiltersBtn">
+                                <i class="bi bi-x-circle"></i> Limpiar filtros
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Models Grid -->
+    <div class="row" id="modelsContainer">
+        @if (Model.AvailableModels.Any())
+        {
+            @foreach (var aiModel in Model.AvailableModels)
+            {
+                <div class="col-12 col-md-6 col-lg-4 col-xl-3 mb-4 model-card" 
+                     data-model-name="@aiModel.Name.ToLower()" 
+                     data-is-recommended="@aiModel.IsRecommendedForSQL.ToString().ToLower()"
+                     data-model-type="@GetModelType(aiModel.Name)"
+                     data-model-size="@GetModelSizeCategory(aiModel.Size)">
+                    
+                    <div class="card h-100 border-0 shadow-sm model-item @(Model.CurrentModel == aiModel.Name ? "border-primary bg-light" : "")">
+                        <!-- Card Header -->
+                        <div class="card-header border-0 bg-white p-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="card-title mb-1 text-truncate" title="@aiModel.Name">
+                                        @if (aiModel.IsRecommendedForSQL)
+                                        {
+                                            <i class="bi bi-star-fill text-warning"></i>
+                                        }
+                                        @aiModel.Name
+                                    </h6>
+                                    <small class="text-muted">@aiModel.Size</small>
+                                </div>
+                                @if (Model.CurrentModel == aiModel.Name)
+                                {
+                                    <span class="badge bg-primary rounded-pill">
+                                        <i class="bi bi-check-circle"></i>
+                                        <span class="d-none d-sm-inline">Activo</span>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Card Body -->
+                        <div class="card-body p-3 pt-0">
+                            <p class="card-text small text-muted mb-3">@aiModel.Description</p>
+                            
+                            <!-- Performance Indicators -->
+                            <div class="mb-3">
+                                @{
+                                    var performance = GetModelPerformance(aiModel.Name);
+                                }
+                                <div class="row g-2 small">
+                                    <div class="col-4">
+                                        <div class="text-center">
+                                            <div class="fw-bold text-@performance.SpeedColor">@performance.Speed</div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">Velocidad</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="text-center">
+                                            <div class="fw-bold text-@performance.AccuracyColor">@performance.Accuracy</div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">Precisión</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="text-center">
+                                            <div class="fw-bold text-@performance.MemoryColor">@performance.Memory</div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">RAM</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Last Modified -->
+                            <div class="small text-muted mb-3">
+                                <i class="bi bi-clock"></i>
+                                Modificado: @aiModel.ModifiedAt.ToString("dd/MM/yyyy HH:mm")
+                            </div>
+                        </div>
+
+                        <!-- Card Footer -->
+                        <div class="card-footer border-0 bg-white p-3 pt-0">
+                            @if (Model.CurrentModel == aiModel.Name)
+                            {
+                                <button type="button" class="btn btn-outline-primary btn-sm w-100" disabled>
+                                    <i class="bi bi-check-circle"></i> Modelo Activo
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="d-grid gap-2">
+                                    <button type="button" class="btn btn-primary btn-sm select-model-btn" 
+                                            data-model="@aiModel.Name">
+                                        <i class="bi bi-arrow-right-circle"></i>
+                                        <span class="d-none d-sm-inline">Seleccionar</span>
+                                        <span class="d-sm-none">Usar</span>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-info btn-sm test-model-btn" 
+                                            data-model="@aiModel.Name">
+                                        <i class="bi bi-play-circle"></i>
+                                        <span class="d-none d-sm-inline">Probar</span>
+                                        <span class="d-sm-none">Test</span>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="col-12">
+                <div class="alert alert-warning text-center">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <h5>No hay modelos disponibles</h5>
+                    <p class="mb-0">Parece que no hay modelos instalados en Ollama.</p>
+                    <hr>
+                    <button type="button" class="btn btn-primary" id="installModelsBtn2">
+                        <i class="bi bi-download"></i> Instalar Modelos
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Empty State when filtered -->
+    <div class="row d-none" id="emptyState">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="bi bi-search text-muted" style="font-size: 3rem;"></i>
+                <h5 class="text-muted mt-3">No se encontraron modelos</h5>
+                <p class="text-muted">Intenta ajustar los filtros de búsqueda</p>
+                <button type="button" class="btn btn-outline-primary" id="clearFiltersBtn2">
+                    Limpiar filtros
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para probar modelo -->
+<div class="modal fade" id="testModelModal" tabindex="-1" aria-labelledby="testModelModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="testModelModalLabel">
+                    <i class="bi bi-play-circle"></i> Probar Modelo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="testModelName" class="form-label">Modelo seleccionado:</label>
+                    <input type="text" class="form-control" id="testModelName" readonly>
+                </div>
+                <div class="mb-3">
+                    <label for="testQuery" class="form-label">Consulta de prueba:</label>
+                    <textarea class="form-control" id="testQuery" rows="3" 
+                              placeholder="Ejemplo: Mostrar todos los productos con precio mayor a 100">Mostrar todos los productos ordenados por precio</textarea>
+                </div>
+                <div id="testResult" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-primary" id="runTestBtn">
+                    <i class="bi bi-play"></i> Ejecutar Prueba
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para instalar modelos -->
+<div class="modal fade" id="installModal" tabindex="-1" aria-labelledby="installModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="installModalLabel">
+                    <i class="bi bi-download"></i> Instalar Modelos
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Instalación de Modelos</strong><br>
+                    Utiliza los scripts proporcionados para instalar modelos adicionales optimizados para SQL.
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-12">
+                        <h6>Opciones de instalación:</h6>
+                    </div>
+                    <div class="col-6">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-terminal text-success" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">Linux/Mac</h6>
+                                <code class="small">./install-models-advanced.sh</code>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-windows text-primary" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">Windows</h6>
+                                <code class="small">install-models-advanced.bat</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <h6>Modelos recomendados:</h6>
+                    <ul class="small">
+                        <li><strong>codellama:7b-code</strong> - Especializado en SQL (3.8GB)</li>
+                        <li><strong>deepseek-coder:6.7b</strong> - Excelente precisión (3.8GB)</li>
+                        <li><strong>llama3.2:3b</strong> - Rápido y ligero (2GB)</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <a href="/Docs/install-models-advanced.bat" class="btn btn-primary" download>
+                    <i class="bi bi-download"></i> Descargar Script Windows
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Variables globales
+            let allModels = @Html.Raw(Json.Serialize(Model.AvailableModels));
+            let currentFilter = 'all';
+            let currentSearch = '';
+
+            // Event Listeners
+            $('#modelFilter').on('change', applyFilters);
+            $('#modelSearch').on('input', applyFilters);
+            $('#clearFiltersBtn, #clearFiltersBtn2').on('click', clearFilters);
+            $('#refreshModelsBtn').on('click', refreshModels);
+            $('#installModelsBtn, #installModelsBtn2').on('click', showInstallModal);
+            
+            // Seleccionar modelo
+            $(document).on('click', '.select-model-btn', function() {
+                const modelName = $(this).data('model');
+                selectModel(modelName);
+            });
+
+            // Probar modelo
+            $(document).on('click', '.test-model-btn', function() {
+                const modelName = $(this).data('model');
+                showTestModal(modelName);
+            });
+
+            $('#runTestBtn').on('click', runModelTest);
+
+            // Funciones principales
+            function applyFilters() {
+                currentFilter = $('#modelFilter').val();
+                currentSearch = $('#modelSearch').val().toLowerCase();
+                
+                let visibleCount = 0;
+                
+                $('.model-card').each(function() {
+                    const $card = $(this);
+                    const modelName = $card.data('model-name');
+                    const isRecommended = $card.data('is-recommended');
+                    const modelType = $card.data('model-type');
+                    const modelSize = $card.data('model-size');
+                    
+                    let showCard = true;
+                    
+                    // Aplicar filtro por tipo
+                    if (currentFilter !== 'all') {
+                        switch (currentFilter) {
+                            case 'recommended':
+                                showCard = isRecommended === true;
+                                break;
+                            case 'code':
+                                showCard = modelType === 'code';
+                                break;
+                            case 'general':
+                                showCard = modelType === 'general';
+                                break;
+                            case 'small':
+                                showCard = modelSize === 'small';
+                                break;
+                            case 'large':
+                                showCard = modelSize === 'large';
+                                break;
+                        }
+                    }
+                    
+                    // Aplicar filtro de búsqueda
+                    if (showCard && currentSearch) {
+                        showCard = modelName.includes(currentSearch);
+                    }
+                    
+                    if (showCard) {
+                        $card.show();
+                        visibleCount++;
+                    } else {
+                        $card.hide();
+                    }
+                });
+                
+                // Mostrar/ocultar estado vacío
+                if (visibleCount === 0) {
+                    $('#emptyState').removeClass('d-none');
+                } else {
+                    $('#emptyState').addClass('d-none');
+                }
+            }
+
+            function clearFilters() {
+                $('#modelFilter').val('all');
+                $('#modelSearch').val('');
+                currentFilter = 'all';
+                currentSearch = '';
+                $('.model-card').show();
+                $('#emptyState').addClass('d-none');
+            }
+
+            function refreshModels() {
+                const $btn = $('#refreshModelsBtn');
+                const originalText = $btn.html();
+                
+                $btn.html('<i class="bi bi-arrow-clockwise spin"></i> Actualizando...');
+                $btn.prop('disabled', true);
+                
+                $.ajax({
+                    url: '@Url.Action("RefreshModels", "Settings")',
+                    type: 'POST',
+                    success: function(response) {
+                        if (response.success) {
+                            location.reload();
+                        } else {
+                            Swal.fire('Error', response.message || 'Error actualizando modelos', 'error');
+                        }
+                    },
+                    error: function() {
+                        Swal.fire('Error', 'Error de comunicación con el servidor', 'error');
+                    },
+                    complete: function() {
+                        $btn.html(originalText);
+                        $btn.prop('disabled', false);
+                    }
+                });
+            }
+
+            function selectModel(modelName) {
+                Swal.fire({
+                    title: '¿Cambiar modelo activo?',
+                    text: `¿Desea cambiar al modelo: ${modelName}?`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, cambiar',
+                    cancelButtonText: 'Cancelar',
+                    showLoaderOnConfirm: true,
+                    preConfirm: () => {
+                        return $.ajax({
+                            url: '@Url.Action("SetModel", "Settings")',
+                            type: 'POST',
+                            data: { modelName: modelName }
+                        });
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        if (result.value.success) {
+                            Swal.fire('¡Éxito!', `Modelo cambiado a: ${modelName}`, 'success')
+                                .then(() => location.reload());
+                        } else {
+                            Swal.fire('Error', result.value.message || 'Error cambiando modelo', 'error');
+                        }
+                    }
+                });
+            }
+
+            function showTestModal(modelName) {
+                $('#testModelName').val(modelName);
+                $('#testResult').empty();
+                $('#testModelModal').modal('show');
+            }
+
+            function showInstallModal() {
+                $('#installModal').modal('show');
+            }
+
+            function runModelTest() {
+                const modelName = $('#testModelName').val();
+                const query = $('#testQuery').val();
+                
+                if (!query.trim()) {
+                    Swal.fire('Error', 'Por favor ingrese una consulta de prueba', 'warning');
+                    return;
+                }
+                
+                const $btn = $('#runTestBtn');
+                const originalText = $btn.html();
+                
+                $btn.html('<i class="bi bi-hourglass-split"></i> Ejecutando...').prop('disabled', true);
+                $('#testResult').html('<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Ejecutando prueba...</div>');
+                
+                $.ajax({
+                    url: '@Url.Action("TestModel", "Settings")',
+                    type: 'POST',
+                    data: { 
+                        modelName: modelName,
+                        testQuery: query
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $('#testResult').html(`
+                                <div class="alert alert-success">
+                                    <h6><i class="bi bi-check-circle"></i> Resultado de la prueba:</h6>
+                                    <div class="code-block">${response.result}</div>
+                                    <small class="text-muted">Tiempo: ${response.executionTime}ms</small>
+                                </div>
+                            `);
+                        } else {
+                            $('#testResult').html(`
+                                <div class="alert alert-danger">
+                                    <h6><i class="bi bi-exclamation-triangle"></i> Error en la prueba:</h6>
+                                    <p>${response.message}</p>
+                                </div>
+                            `);
+                        }
+                    },
+                    error: function() {
+                        $('#testResult').html(`
+                            <div class="alert alert-danger">
+                                <h6><i class="bi bi-x-circle"></i> Error de comunicación</h6>
+                                <p>No se pudo completar la prueba</p>
+                            </div>
+                        `);
+                    },
+                    complete: function() {
+                        $btn.html(originalText).prop('disabled', false);
+                    }
+                });
+            }
+
+            // Animación de spinning para refresh
+            $('<style>').text(`
+                .spin {
+                    animation: spin 1s linear infinite;
+                }
+                @@keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `).appendTo('head');
+        });
+    </script>
+}
+
+@functions {
+    private string GetModelType(string modelName)
+    {
+        var name = modelName.ToLower();
+        if (name.Contains("codellama") || name.Contains("deepseek-coder") || name.Contains("granite-code"))
+            return "code";
+        return "general";
+    }
+
+    private string GetModelSizeCategory(string size)
+    {
+        if (size.Contains("GB"))
+        {
+            var sizeValue = float.Parse(size.Replace(" GB", ""));
+            return sizeValue < 4 ? "small" : "large";
+        }
+        return "small"; // MB sizes are typically small
+    }
+
+    private dynamic GetModelPerformance(string modelName)
+    {
+        var name = modelName.ToLower();
+        
+        if (name.Contains("codellama"))
+            return new { Speed = "⭐⭐⭐", Accuracy = "⭐⭐⭐⭐⭐", Memory = "⭐⭐⭐", SpeedColor = "warning", AccuracyColor = "success", MemoryColor = "warning" };
+        else if (name.Contains("deepseek-coder"))
+            return new { Speed = "⭐⭐⭐⭐", Accuracy = "⭐⭐⭐⭐⭐", Memory = "⭐⭐⭐", SpeedColor = "success", AccuracyColor = "success", MemoryColor = "warning" };
+        else if (name.Contains("llama3.2"))
+            return new { Speed = "⭐⭐⭐⭐⭐", Accuracy = "⭐⭐⭐", Memory = "⭐⭐⭐⭐⭐", SpeedColor = "success", AccuracyColor = "warning", MemoryColor = "success" };
+        else if (name.Contains("mistral"))
+            return new { Speed = "⭐⭐⭐⭐", Accuracy = "⭐⭐⭐⭐", Memory = "⭐⭐⭐⭐", SpeedColor = "success", AccuracyColor = "success", MemoryColor = "success" };
+        else if (name.Contains("phi"))
+            return new { Speed = "⭐⭐⭐⭐⭐", Accuracy = "⭐⭐⭐", Memory = "⭐⭐⭐⭐⭐", SpeedColor = "success", AccuracyColor = "warning", MemoryColor = "success" };
+        else
+            return new { Speed = "⭐⭐⭐", Accuracy = "⭐⭐⭐", Memory = "⭐⭐⭐", SpeedColor = "warning", AccuracyColor = "warning", MemoryColor = "warning" };
+    }
+}

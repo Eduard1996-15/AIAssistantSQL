@@ -22,7 +22,10 @@ builder.Services.AddHttpClient<OllamaService>(client =>
 {
     // Configuración específica para Ollama
     client.BaseAddress = new Uri("http://localhost:11434/");
-    client.Timeout = TimeSpan.FromSeconds(35);
+    
+    // ⏱️ Timeout LARGO para modelos grandes (deepseek-coder:33b necesita 60-120s)
+    // El timeout real se maneja con CancellationToken en OllamaService
+    client.Timeout = TimeSpan.FromMinutes(5); // 5 minutos máximo
     
     // Headers por defecto
     client.DefaultRequestHeaders.Add("User-Agent", "AIAssistantSQL/1.0");
@@ -51,7 +54,7 @@ builder.Services.AddHttpClient<OllamaService>(client =>
 // Configurar HttpClient para DeepSeek
 builder.Services.AddHttpClient("DeepSeek", client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(30);
+    client.Timeout = TimeSpan.FromMinutes(3); // 3 minutos para APIs externas
     client.DefaultRequestHeaders.Add("User-Agent", "AIAssistantSQL/1.0");
 });
 

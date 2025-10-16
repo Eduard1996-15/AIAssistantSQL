@@ -2,155 +2,184 @@
     ViewData["Title"] = "Inicio";
 }
 
-<div class="text-center mb-5">
-    <h1 class="display-4">
-        <i class="bi bi-robot"></i> AI Assistant SQL
+<!-- Hero Section Responsive -->
+<div class="text-center mb-4 mb-md-5">
+    <h1 class="display-4 fw-bold">
+        <i class="bi bi-robot text-primary"></i> 
+        <span class="d-block d-sm-inline">AI Assistant SQL</span>
     </h1>
-    <p class="lead">Consulta tus bases de datos usando lenguaje natural</p>
+    <p class="lead text-muted">Consulta tus bases de datos usando lenguaje natural</p>
+    
+    <!-- Quick Status Bar for Mobile -->
+    <div class="d-md-none">
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <div class="card border-0 bg-light">
+                    <div class="card-body py-2 px-3">
+                        <small class="d-flex align-items-center justify-content-center">
+                            <span class="status-indicator @(ViewBag.IsOllamaAvailable == true ? "status-online" : "status-offline")"></span>
+                            <strong>IA:</strong>&nbsp;
+                            @if (ViewBag.IsOllamaAvailable)
+                            {
+                                <span class="text-success">ON</span>
+                            }
+                            else
+                            {
+                                <span class="text-danger">OFF</span>
+                            }
+                        </small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card border-0 bg-light">
+                    <div class="card-body py-2 px-3">
+                        <small class="d-flex align-items-center justify-content-center">
+                            <span class="status-indicator @(ViewBag.IsSchemaLoaded == true ? "status-online" : "status-offline")"></span>
+                            <strong>BD:</strong>&nbsp;
+                            @if (ViewBag.IsSchemaLoaded)
+                            {
+                                <span class="text-success">OK</span>
+                            }
+                            else
+                            {
+                                <span class="text-warning">NO</span>
+                            }
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div class="row g-4 mb-5">
-    <div class="col-md-4">
-        <div class="card h-100 card-hover">
-            <div class="card-body text-center">
-                <i class="bi bi-database-fill-gear text-primary" style="font-size: 3rem;"></i>
-                <h5 class="card-title mt-3">Estado del Sistema</h5>
-                <hr />
-                <div class="text-start">
-                    <p>
-                        <strong>Ollama:</strong>
-                        @if (ViewBag.IsOllamaAvailable)
-                        {
-                            <span class="badge bg-success">
-                                <i class="bi bi-check-circle"></i> Conectado
-                            </span>
-                        }
-                        else
-                        {
-                            <span class="badge bg-danger">
-                                <i class="bi bi-x-circle"></i> Desconectado
-                            </span>
-                        }
-                    </p>
-                    <p>
-                        <strong>Esquema:</strong>
+<!-- Main Cards Grid - Responsive -->
+<div class="row g-3 g-md-4 mb-4 mb-md-5">
+    <!-- Sistema Status Card -->
+    <div class="col-12 col-lg-4">
+        <div class="card h-100 card-hover border-0 shadow-sm">
+            <div class="card-body text-center p-3 p-md-4">
+                <div class="mb-3">
+                    <i class="bi bi-database-fill-gear text-primary" style="font-size: 2.5rem;"></i>
+                </div>
+                <h5 class="card-title h6 h-md-5">Estado del Sistema</h5>
+                
+                <!-- Status Details - Hidden on Mobile -->
+                <div class="d-none d-md-block">
+                    <hr />
+                    <div class="text-start">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong class="small">Ollama:</strong>
+                            @if (ViewBag.IsOllamaAvailable)
+                            {
+                                <span class="badge bg-success rounded-pill">
+                                    <i class="bi bi-check-circle"></i> Conectado
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger rounded-pill">
+                                    <i class="bi bi-x-circle"></i> Desconectado
+                                </span>
+                            }
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong class="small">Esquema:</strong>
+                            @if (ViewBag.IsSchemaLoaded)
+                            {
+                                <span class="badge bg-success rounded-pill">
+                                    <i class="bi bi-check-circle"></i> Cargado
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning rounded-pill">
+                                    <i class="bi bi-exclamation-triangle"></i> No cargado
+                                </span>
+                            }
+                        </div>
                         @if (ViewBag.IsSchemaLoaded)
                         {
-                            <span class="badge bg-success">
-                                <i class="bi bi-check-circle"></i> Cargado
-                            </span>
+                            <p class="small text-muted mb-0 mt-2">@ViewBag.SchemaInfo</p>
                         }
-                        else
-                        {
-                            <span class="badge bg-warning">
-                                <i class="bi bi-exclamation-triangle"></i> No cargado
-                            </span>
-                        }
-                    </p>
-                    @if (ViewBag.IsSchemaLoaded)
-                    {
-                        <p class="small text-muted mb-0">@ViewBag.SchemaInfo</p>
-                    }
+                    </div>
+                    <hr />
                 </div>
-                <hr />
-                <button type="button" class="btn btn-sm btn-outline-primary w-100" id="checkOllamaBtn">
-                    <i class="bi bi-wifi"></i> Verificar Conexión Ollama
+                
+                <!-- Action Button -->
+                <button type="button" class="btn btn-outline-primary btn-sm w-100" id="checkOllamaBtn">
+                    <i class="bi bi-wifi"></i> 
+                    <span class="d-none d-sm-inline">Verificar ConexiÃ³n</span>
+                    <span class="d-sm-none">Verificar</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <div class="col-md-4">
-        <div class="card h-100 card-hover">
-            <div class="card-body text-center">
-                <i class="bi bi-gear-fill text-info" style="font-size: 3rem;"></i>
-                <h5 class="card-title mt-3">Configuración</h5>
-                <p class="card-text">Carga el esquema de tu base de datos</p>
-                <a asp-controller="Database" asp-action="Index" class="btn btn-info">
-                    <i class="bi bi-database"></i> Configurar BD
+    <!-- ConfiguraciÃ³n Card -->
+    <div class="col-12 col-sm-6 col-lg-4">
+        <div class="card h-100 card-hover border-0 shadow-sm">
+            <div class="card-body text-center p-3 p-md-4">
+                <div class="mb-3">
+                    <i class="bi bi-gear-fill text-info" style="font-size: 2.5rem;"></i>
+                </div>
+                <h5 class="card-title h6 h-md-5">ConfiguraciÃ³n</h5>
+                <p class="card-text small text-muted d-none d-md-block">
+                    Carga el esquema de tu base de datos
+                </p>
+                <a asp-controller="Database" asp-action="Index" class="btn btn-info w-100">
+                    <i class="bi bi-database"></i> 
+                    <span class="d-none d-sm-inline">Configurar BD</span>
+                    <span class="d-sm-none">Config BD</span>
                 </a>
             </div>
         </div>
     </div>
 
-    <div class="col-md-4">
-        <div class="card h-100 card-hover">
-            <div class="card-body text-center">
-                <i class="bi bi-chat-left-text-fill text-success" style="font-size: 3rem;"></i>
-                <h5 class="card-title mt-3">Consultas</h5>
-                <p class="card-text">Haz preguntas en lenguaje natural</p>
-                <a asp-controller="Query" asp-action="Index" class="btn btn-success">
-                    <i class="bi bi-chat-dots"></i> Realizar Consulta
+    <!-- Consultas Card -->
+    <div class="col-12 col-sm-6 col-lg-4">
+        <div class="card h-100 card-hover border-0 shadow-sm">
+            <div class="card-body text-center p-3 p-md-4">
+                <div class="mb-3">
+                    <i class="bi bi-chat-left-text-fill text-success" style="font-size: 2.5rem;"></i>
+                </div>
+                <h5 class="card-title h6 h-md-5">Consultas</h5>
+                <p class="card-text small text-muted d-none d-md-block">
+                    Haz preguntas en lenguaje natural
+                </p>
+                <a asp-controller="Query" asp-action="Index" class="btn btn-success w-100">
+                    <i class="bi bi-chat-dots"></i> 
+                    <span class="d-none d-sm-inline">Realizar Consulta</span>
+                    <span class="d-sm-none">Consultar</span>
                 </a>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Cómo usar AI Assistant SQL</h5>
-            </div>
-            <div class="card-body">
-                <ol class="mb-0">
-                    <li class="mb-3">
-                        <strong>Configurar Base de Datos:</strong>
-                        <ul>
-                            <li>Opción 1: Sube un archivo JSON con el esquema de tu BD</li>
-                            <li>Opción 2: Ingresa la cadena de conexión para cargar automáticamente</li>
-                            <li>Opción 3: Guarda el esquema actual para reutilizarlo</li>
-                        </ul>
-                    </li>
-                    <li class="mb-3">
-                        <strong>Asegúrate de que Ollama esté corriendo:</strong>
-                        <ul>
-                            <li>Ejecuta Ollama en tu equipo: <code>ollama serve</code></li>
-                            <li>Verifica que el modelo esté instalado: <code>ollama pull codellama</code></li>
-                            <li>Usa el botón "Verificar Conexión Ollama" arriba para confirmar</li>
-                        </ul>
-                    </li>
-                    <li>
-                        <strong>Realiza Consultas:</strong>
-                        <ul>
-                            <li>Ve a la sección de Consultas</li>
-                            <li>Escribe tu pregunta en lenguaje natural</li>
-                            <li>La IA generará y ejecutará la consulta SQL automáticamente</li>
-                        </ul>
-                    </li>
-                </ol>
-            </div>
+<!-- Quick Actions for Mobile -->
+<div class="d-md-none">
+    <div class="row g-2 mb-4">
+        <div class="col-6">
+            <a asp-controller="Settings" asp-action="Index" class="btn btn-outline-secondary w-100 btn-sm">
+                <i class="bi bi-gear"></i> Ajustes
+            </a>
+        </div>
+        <div class="col-6">
+            <a asp-controller="Query" asp-action="History" class="btn btn-outline-info w-100 btn-sm">
+                <i class="bi bi-clock-history"></i> Historial
+            </a>
         </div>
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header bg-warning">
-                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> Ejemplos de Consultas</h5>
-            </div>
-            <div class="card-body">
-                <ul class="mb-0">
-                    <li>"Muéstrame los últimos 10 usuarios registrados"</li>
-                    <li>"¿Cuántos productos hay en cada categoría?"</li>
-                    <li>"Lista las ventas del último mes ordenadas por monto"</li>
-                    <li>"Encuentra todos los clientes de Argentina"</li>
-                    <li>"¿Cuál es el producto más vendido?"</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal para mostrar resultado de verificación -->
+<!-- Modal para mostrar resultado de verificaciÃ³n -->
 <div class="modal fade" id="ollamaCheckModal" tabindex="-1" aria-labelledby="ollamaCheckModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header" id="modalHeader">
                 <h5 class="modal-title" id="ollamaCheckModalLabel">
-                    <i class="bi bi-wifi"></i> Verificación de Conexión Ollama
+                    <i class="bi bi-wifi"></i> VerificaciÃ³n de ConexiÃ³n Ollama
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -159,7 +188,7 @@
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Verificando...</span>
                     </div>
-                    <p class="mt-3">Verificando conexión con Ollama...</p>
+                    <p class="mt-3">Verificando conexiÃ³n con Ollama...</p>
                 </div>
             </div>
             <div class="modal-footer">
@@ -181,17 +210,17 @@
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Verificando...</span>
                         </div>
-                        <p class="mt-3">Verificando conexión con Ollama...</p>
+                        <p class="mt-3">Verificando conexiÃ³n con Ollama...</p>
                     </div>
                 `);
 
-                // Hacer la petición AJAX
+                // Hacer la peticiÃ³n AJAX
                 $.ajax({
                     url: '@Url.Action("CheckOllamaConnection", "Home")',
                     type: 'POST',
                     success: function(response) {
                         if (response.success) {
-                            // Conexión exitosa
+                            // ConexiÃ³n exitosa
                             $('#modalHeader').removeClass('bg-primary bg-danger bg-warning').addClass('bg-success text-white');
                             $('#modalBody').html(`
                                 <div class="alert alert-success mb-0">
@@ -203,7 +232,7 @@
                                 </div>
                             `);
                         } else {
-                            // Conexión fallida
+                            // ConexiÃ³n fallida
                             $('#modalHeader').removeClass('bg-primary bg-success bg-warning').addClass('bg-danger text-white');
                             
                             let suggestionsHtml = '';
@@ -227,7 +256,7 @@
                             `);
                         }
 
-                        // Actualizar indicador en la página
+                        // Actualizar indicador en la pÃ¡gina
                         setTimeout(function() {
                             location.reload();
                         }, 3000);
@@ -236,7 +265,7 @@
                         $('#modalHeader').removeClass('bg-primary bg-success bg-danger').addClass('bg-warning text-dark');
                         $('#modalBody').html(`
                             <div class="alert alert-warning mb-0">
-                                <h5><i class="bi bi-exclamation-triangle"></i> Error de Comunicación</h5>
+                                <h5><i class="bi bi-exclamation-triangle"></i> Error de ComunicaciÃ³n</h5>
                                 <p>No se pudo verificar el estado de Ollama.</p>
                                 <p class="mb-0"><strong>Error:</strong> ${error}</p>
                             </div>

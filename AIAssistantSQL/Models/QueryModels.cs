@@ -21,12 +21,17 @@ namespace AIAssistantSQL.Models
         public int RowCount { get; set; }
         public TimeSpan ExecutionTime { get; set; }
         
-        // NUEVO: Interpretación en lenguaje natural de los resultados
+        // NUEVO: InterpretaciÃ³n en lenguaje natural de los resultados
         public string? NaturalLanguageResponse { get; set; }
+        
+        // NUEVO: MÃ©tricas de tiempo detalladas
+        public TimeSpan AIResponseTime { get; set; }
+        public TimeSpan DatabaseResponseTime { get; set; }
+        public TimeSpan TotalResponseTime { get; set; }
     }
 
     /// <summary>
-    /// Historial de consultas con conversación
+    /// Historial de consultas con conversaciï¿½n
     /// </summary>
     public class QueryHistory
     {
@@ -38,12 +43,12 @@ namespace AIAssistantSQL.Models
         // NUEVO: Respuesta de la IA en lenguaje natural
         public string? NaturalLanguageResponse { get; set; }
         
-        // NUEVO: ID de conversación para agrupar mensajes relacionados
+        // NUEVO: ID de conversaciï¿½n para agrupar mensajes relacionados
         public Guid ConversationId { get; set; }
     }
 
     /// <summary>
-    /// Conversación completa con la IA
+    /// Conversaciï¿½n completa con la IA
     /// </summary>
     public class Conversation
     {
@@ -55,7 +60,7 @@ namespace AIAssistantSQL.Models
     }
 
     /// <summary>
-    /// Mensaje individual en una conversación
+    /// Mensaje individual en una conversaciï¿½n
     /// </summary>
     public class ConversationMessage
     {

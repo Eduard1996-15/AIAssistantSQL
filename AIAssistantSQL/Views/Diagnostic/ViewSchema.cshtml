@@ -1,12 +1,12 @@
 @model AIAssistantSQL.Models.DatabaseSchema
 @{
-    ViewData["Title"] = "DiagnÛstico de Esquema";
+    ViewData["Title"] = "DiagnÔøΩstico de Esquema";
 }
 
 <div class="row mb-4">
     <div class="col-md-12">
         <h1 class="mb-3">
-            <i class="bi bi-bug"></i> DiagnÛstico de Esquema de Base de Datos
+            <i class="bi bi-bug"></i> DiagnÔøΩstico de Esquema de Base de Datos
         </h1>
         <div class="alert alert-info">
             <strong>Base de Datos:</strong> @Model.DatabaseName | 
@@ -63,7 +63,7 @@
                                                 <tr>
                                                     <th>Columna</th>
                                                     <th>Tipo</th>
-                                                    <th>TamaÒo</th>
+                                                    <th>TamaÔøΩo</th>
                                                     <th>Nullable</th>
                                                     <th>Identity</th>
                                                     <th>Es PK</th>
@@ -122,7 +122,7 @@
 
                                     @if (table.ForeignKeys.Any())
                                     {
-                                        <h6 class="mt-3">Claves For·neas:</h6>
+                                        <h6 class="mt-3">Claves ForÔøΩneas:</h6>
                                         <ul class="list-group">
                                             @foreach (var fk in table.ForeignKeys)
                                             {
@@ -143,47 +143,70 @@
         </div>
 
         <div class="card mb-4">
-            <div class="card-header bg-warning">
+            <div class="card-header bg-info text-white">
                 <h5 class="mb-0">
-                    <i class="bi bi-lightbulb"></i> InformaciÛn para la IA
+                    <i class="bi bi-lightbulb"></i> InformaciÔøΩn para la IA
                 </h5>
             </div>
             <div class="card-body">
-                <h6>Columnas que la IA debe usar para la tabla Usuario:</h6>
+                <h6>Resumen del esquema para consultas de IA:</h6>
                 @{
-                    var usuarioTable = Model.Tables.FirstOrDefault(t => t.TableName == "Usuario");
-                    if (usuarioTable != null)
-                    {
-                        <div class="alert alert-success">
-                            <h6>? Columnas disponibles en Usuario:</h6>
-                            <ul>
-                                @foreach (var col in usuarioTable.Columns)
-                                {
-                                    <li><code>@col.ColumnName</code> (@col.DataType)</li>
-                                }
-                            </ul>
-                        </div>
+                    var totalTables = Model.Tables.Count;
+                    var totalColumns = Model.Tables.Sum(t => t.Columns.Count);
+                    var tablesWithPK = Model.Tables.Count(t => t.PrimaryKeys.Any());
+                    var tablesWithFK = Model.Tables.Count(t => t.ForeignKeys.Any());
+                }
+                
+                <div class="alert alert-success">
+                    <h6>üìä Estad√≠sticas del esquema:</h6>
+                    <ul>
+                        <li><strong>Total de tablas:</strong> @totalTables</li>
+                        <li><strong>Total de columnas:</strong> @totalColumns</li>
+                        <li><strong>Tablas con clave primaria:</strong> @tablesWithPK</li>
+                        <li><strong>Tablas con relaciones:</strong> @tablesWithFK</li>
+                    </ul>
+                </div>
 
-                        <div class="alert alert-danger">
-                            <h6>? Columnas que NO existen (comunes errores):</h6>
-                            <ul>
-                                @if (!usuarioTable.Columns.Any(c => c.ColumnName.Equals("nombre", StringComparison.OrdinalIgnoreCase)))
-                                {
-                                    <li><code>nombre</code> - Esta columna NO existe. Usa <strong>@usuarioTable.Columns.FirstOrDefault(c => c.ColumnName.Contains("Name", StringComparison.OrdinalIgnoreCase))?.ColumnName</strong> en su lugar</li>
-                                }
-                                @if (!usuarioTable.Columns.Any(c => c.ColumnName.Equals("email", StringComparison.OrdinalIgnoreCase)))
-                                {
-                                    <li><code>email</code> - Verificar si existe una columna similar</li>
-                                }
-                            </ul>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="alert alert-danger">
-                            <strong>? Tabla Usuario no encontrada en el esquema!</strong>
-                        </div>
-                    }
+                @if (Model.Tables.Any())
+                {
+                    <div class="alert alert-info">
+                        <h6>üîç Tablas principales identificadas:</h6>
+                        <ul>
+                            @foreach (var table in Model.Tables.Take(5))
+                            {
+                                var columnCount = table.Columns.Count;
+                                var hasRelations = table.ForeignKeys.Any() || Model.Tables.Any(t => t.ForeignKeys.Any(fk => fk.ReferencedTable == table.TableName));
+                                <li>
+                                    <strong>@table.TableName</strong> 
+                                    (@columnCount columnas@(hasRelations ? ", con relaciones" : ""))
+                                </li>
+                            }
+                            @if (Model.Tables.Count > 5)
+                            {
+                                <li><em>... y @(Model.Tables.Count - 5) tablas m√°s</em></li>
+                            }
+                        </ul>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <h6>üí° Consejos para consultas SQL exitosas:</h6>
+                        <ul>
+                            <li>Usa los nombres exactos de tablas y columnas mostrados arriba</li>
+                            <li>Verifica las relaciones antes de hacer JOINs</li>
+                            <li>Las claves primarias son √∫tiles para identificar registros √∫nicos</li>
+                            @if (tablesWithFK > 0)
+                            {
+                                <li>Hay @tablesWithFK tablas con relaciones - √∫tiles para consultas complejas</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-warning">
+                        <strong>‚ö†Ô∏è No se encontraron tablas en el esquema actual!</strong>
+                        <p>Verifica que la conexi√≥n a la base de datos sea correcta y que tenga permisos de lectura.</p>
+                    </div>
                 }
             </div>
         </div>
@@ -195,7 +218,7 @@
                 </h5>
             </div>
             <div class="card-body">
-                <p>Descarga el esquema actual en formato JSON para an·lisis o respaldo:</p>
+                <p>Descarga el esquema actual en formato JSON para anÔøΩlisis o respaldo:</p>
                 <a href="@Url.Action("GetSchemaJson", "Diagnostic")" 
                    class="btn btn-info" 
                    download="schema.json"

@@ -6,6 +6,7 @@ namespace AIAssistantSQL.Models
     public enum DatabaseType
     {
         SqlServer,
-        PostgreSQL
+        PostgreSQL,
+        MySQL
     }
 }

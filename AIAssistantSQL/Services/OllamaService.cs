@@ -16,7 +16,7 @@ namespace AIAssistantSQL.Services
         private string _model; // Cambiado de readonly para poder modificarlo
         private const string OllamaGenerateEndpoint = "api/generate";
 
-        // Constructor que recibe HttpClient por inyecciÛn de dependencias (como tu app SCU)
+        // Constructor que recibe HttpClient por inyecciÔøΩn de dependencias (como tu app SCU)
         public OllamaService(HttpClient httpClient, IConfiguration configuration, ILogger<OllamaService> logger)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -59,7 +59,7 @@ namespace AIAssistantSQL.Services
                         var sizeBytes = modelElement.GetProperty("size").GetInt64();
                         var modifiedAt = modelElement.GetProperty("modified_at").GetDateTime();
 
-                        // Convertir tamaÒo a formato legible
+                        // Convertir tamaÔøΩo a formato legible
                         var sizeGB = sizeBytes / (1024.0 * 1024.0 * 1024.0);
                         var sizeFormatted = sizeGB >= 1 
                             ? $"{sizeGB:F1} GB" 
@@ -102,18 +102,31 @@ namespace AIAssistantSQL.Services
         }
 
         /// <summary>
-        /// Cambia el modelo a usar
+        /// Cambia el modelo a usar y lo guarda en configuraci√≥n
         /// </summary>
         public void SetModel(string modelName)
         {
             if (string.IsNullOrWhiteSpace(modelName))
             {
-                throw new ArgumentException("El nombre del modelo no puede estar vacÌo", nameof(modelName));
+                throw new ArgumentException("El nombre del modelo no puede estar vacÔøΩo", nameof(modelName));
             }
 
             _logger.LogInformation($"?? Cambiando modelo de '{_model}' a '{modelName}'");
             _model = modelName;
+            
+            // ‚úÖ GUARDAR EN CONFIGURACI√ìN para que todas las instancias lo usen
+            _configuration["Ollama:Model"] = modelName;
+            
             _logger.LogInformation($"? Modelo actualizado a: {_model}");
+        }
+
+        /// <summary>
+        /// Limpia la cach√© de modelos para forzar una actualizaci√≥n
+        /// </summary>
+        public void ClearModelsCache()
+        {
+            // En este servicio base no hay cach√©, pero agregamos el m√©todo por compatibilidad
+            _logger.LogInformation("üóëÔ∏è Limpieza de cach√© solicitada (sin implementaci√≥n en servicio base)");
         }
 
         private string GetModelDescription(string modelName)
@@ -121,31 +134,31 @@ namespace AIAssistantSQL.Services
             var lowerName = modelName.ToLower();
 
             if (lowerName.Contains("codellama"))
-                return "?? Especializado en cÛdigo y SQL - Recomendado";
+                return "?? Especializado en cÔøΩdigo y SQL - Recomendado";
             else if (lowerName.Contains("code"))
-                return "?? Optimizado para programaciÛn y SQL";
+                return "?? Optimizado para programaciÔøΩn y SQL";
             else if (lowerName.Contains("sql"))
                 return "??? Especializado en bases de datos";
             else if (lowerName.Contains("llama3.2"))
-                return "?? Modelo r·pido y ligero - Buen balance";
+                return "?? Modelo rÔøΩpido y ligero - Buen balance";
             else if (lowerName.Contains("llama3"))
-                return "? Modelo general versiÛn 3";
+                return "? Modelo general versiÔøΩn 3";
             else if (lowerName.Contains("llama2"))
-                return "?? Modelo general versiÛn 2";
+                return "?? Modelo general versiÔøΩn 2";
             else if (lowerName.Contains("mistral"))
                 return "?? Modelo eficiente y preciso";
             else if (lowerName.Contains("phi"))
-                return "?? Modelo pequeÒo y eficiente";
+                return "?? Modelo pequeÔøΩo y eficiente";
             else if (lowerName.Contains("gemma"))
                 return "?? Modelo de Google - Alta calidad";
             else
-                return "?? Modelo de propÛsito general";
+                return "?? Modelo de propÔøΩsito general";
         }
 
         public async Task<string> GenerateSQLFromNaturalLanguageAsync(string naturalLanguageQuery, DatabaseSchema schema)
         {
-            CancellationTokenSource cts = null;
-            HttpResponseMessage response = null;
+            CancellationTokenSource? cts = null;
+            HttpResponseMessage? response = null;
             
             try
             {
@@ -172,11 +185,20 @@ namespace AIAssistantSQL.Services
                 var json = JsonSerializer.Serialize(requestData);
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                _logger.LogInformation($"?? Enviando peticiÛn a: {OllamaGenerateEndpoint}");
+                _logger.LogInformation($"?? Enviando peticiÔøΩn a: {OllamaGenerateEndpoint}");
                 _logger.LogInformation($"?? URL completa: {_httpClient.BaseAddress}{OllamaGenerateEndpoint}");
 
-                // CancellationToken igual que tu app SCU
-                cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                // Timeout ajustado seg√∫n el modelo:
+                // - codellama (7B): 30s es suficiente
+                // - deepseek-coder:33b: necesita 90-120s
+                // - modelos grandes (70B+): necesitan 180-300s
+                int timeoutSeconds = _model.Contains("33b") || _model.Contains("34b") ? 120 : 
+                                    _model.Contains("70b") || _model.Contains("72b") ? 180 : 
+                                    60; // Default 60s para modelos medianos
+                
+                _logger.LogInformation($"‚è±Ô∏è Timeout configurado: {timeoutSeconds} segundos para modelo {_model}");
+                
+                cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
 
                 try
                 {
@@ -188,7 +210,7 @@ namespace AIAssistantSQL.Services
                     if (!response.IsSuccessStatusCode)
                     {
                         var errorContent = await response.Content.ReadAsStringAsync(cts.Token);
-                        _logger.LogWarning($"?? Ollama respondiÛ con error: {response.StatusCode} - {response.ReasonPhrase}");
+                        _logger.LogWarning($"?? Ollama respondiÔøΩ con error: {response.StatusCode} - {response.ReasonPhrase}");
                         _logger.LogWarning($"?? Contenido del error: {errorContent}");
                         
                         return "**Error de conexion con IA**\n\n" +
@@ -214,8 +236,8 @@ namespace AIAssistantSQL.Services
 
                     if (string.IsNullOrWhiteSpace(responseContent))
                     {
-                        _logger.LogWarning("?? Respuesta vacÌa de Ollama");
-                        throw new Exception("Respuesta vacÌa del servicio de IA");
+                        _logger.LogWarning("?? Respuesta vacÔøΩa de Ollama");
+                        throw new Exception("Respuesta vacÔøΩa del servicio de IA");
                     }
 
                     JsonDocument jsonResponse;
@@ -237,7 +259,7 @@ namespace AIAssistantSQL.Services
                         {
                             _logger.LogInformation("? Respuesta de IA procesada exitosamente");
                             
-                            // PequeÒa pausa para asegurar completion
+                            // PequeÔøΩa pausa para asegurar completion
                             await Task.Delay(10, cts.Token);
                             
                             var sql = ExtractSqlFromResponse(generatedText);
@@ -247,8 +269,8 @@ namespace AIAssistantSQL.Services
                         }
                         else
                         {
-                            _logger.LogWarning("?? Respuesta de IA vacÌa en campo 'response'");
-                            throw new Exception("Respuesta vacÌa. Intente con una pregunta m·s especÌfica.");
+                            _logger.LogWarning("?? Respuesta de IA vacÔøΩa en campo 'response'");
+                            throw new Exception("Respuesta vacÔøΩa. Intente con una pregunta mÔøΩs especÔøΩfica.");
                         }
                     }
 
@@ -265,18 +287,30 @@ namespace AIAssistantSQL.Services
                 }
                 catch (OperationCanceledException) when (cts?.Token.IsCancellationRequested == true)
                 {
-                    _logger.LogWarning("? Timeout de 30 segundos alcanzado");
+                    // Calcular timeout usado
+                    int timeoutUsed = _model.Contains("33b") || _model.Contains("34b") ? 120 : 
+                                     _model.Contains("70b") || _model.Contains("72b") ? 180 : 
+                                     60;
+                    
+                    _logger.LogWarning($"‚è±Ô∏è Timeout de {timeoutUsed} segundos alcanzado para modelo {_model}");
+                    
+                    string suggestions = _model.Contains("33b") || _model.Contains("70b") 
+                        ? "- El modelo es grande, considere usar un modelo m√°s peque√±o (codellama, llama3.2)\n" +
+                          "- O espere un poco m√°s (primera consulta suele ser m√°s lenta)\n" +
+                          "- Verifique que tiene suficiente RAM (m√≠nimo 16GB para 33b)\n"
+                        : "- Intente con una pregunta m√°s corta\n" +
+                          "- Verifique recursos del sistema\n";
+                    
                     throw new Exception(
-                        "? Timeout del servicio de IA\n\n" +
-                        "La consulta tardÛ demasiado (30 segundos).\n\n" +
+                        $"‚è±Ô∏è Timeout del servicio de IA\n\n" +
+                        $"La consulta tard√≥ m√°s de {timeoutUsed} segundos.\n\n" +
                         "Sugerencias:\n" +
-                        "- Intente con una pregunta m·s corta\n" +
-                        "- Verifique recursos del sistema\n" +
-                        "- Reinicie Ollama si persiste");
+                        suggestions +
+                        "- Reinicie Ollama si persiste: ollama serve");
                 }
                 finally
                 {
-                    // CRÕTICO: Liberar recursos HTTP
+                    // CRÔøΩTICO: Liberar recursos HTTP
                     if (response != null)
                     {
                         try
@@ -292,12 +326,12 @@ namespace AIAssistantSQL.Services
             }
             catch (HttpRequestException httpEx)
             {
-                _logger.LogError(httpEx, "?? Error de conexiÛn HTTP");
+                _logger.LogError(httpEx, "?? Error de conexiÔøΩn HTTP");
                 throw new Exception(
                     $"? Error de conectividad\n\n" +
                     $"Detalle: {httpEx.Message}\n\n" +
                     "Soluciones:\n" +
-                    "1. Verificar que Ollama estÈ ejecut·ndose: ollama serve\n" +
+                    "1. Verificar que Ollama estÔøΩ ejecutÔøΩndose: ollama serve\n" +
                     "2. Comprobar puerto 11434\n" +
                     "3. Verificar firewall\n" +
                     "4. Probar: curl http://localhost:11434/api/tags",
@@ -310,7 +344,7 @@ namespace AIAssistantSQL.Services
             }
             finally
             {
-                // CRÕTICO: Liberar CancellationTokenSource
+                // CRÔøΩTICO: Liberar CancellationTokenSource
                 try
                 {
                     cts?.Dispose();
@@ -320,7 +354,7 @@ namespace AIAssistantSQL.Services
                     _logger.LogWarning(ctsEx, "?? Error liberando CancellationTokenSource");
                 }
 
-                // CRÕTICO: Garbage collection
+                // CRÔøΩTICO: Garbage collection
                 try
                 {
                     GC.Collect();
@@ -337,13 +371,13 @@ namespace AIAssistantSQL.Services
         /// Interpreta los resultados de una consulta SQL y genera una respuesta en lenguaje natural
         /// </summary>
         public async Task<string> InterpretQueryResultsAsync(
-            string originalQuestion, 
-            string executedSql, 
+            string originalQuestion,
+            string executedSql,
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory = null)
+            List<string>? conversationHistory = null)
         {
-            CancellationTokenSource cts = null;
-            HttpResponseMessage response = null;
+            CancellationTokenSource? cts = null;
+            HttpResponseMessage? response = null;
             
             try
             {
@@ -358,7 +392,7 @@ namespace AIAssistantSQL.Services
                     stream = false,
                     options = new 
                     {
-                        temperature = 0.7, // M·s creativo para respuestas naturales
+                        temperature = 0.7, // MÔøΩs creativo para respuestas naturales
                         top_p = 0.9,
                         max_tokens = 2048,
                         num_predict = 1024,
@@ -369,7 +403,12 @@ namespace AIAssistantSQL.Services
                 var json = JsonSerializer.Serialize(requestData);
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                // Timeout ajustado para interpretaci√≥n (generalmente m√°s r√°pido que generaci√≥n SQL)
+                int timeoutSeconds = _model.Contains("33b") || _model.Contains("34b") ? 90 : 
+                                    _model.Contains("70b") || _model.Contains("72b") ? 120 : 
+                                    45;
+                
+                cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
 
                 response = await _httpClient.PostAsync(OllamaGenerateEndpoint, content, cts.Token);
 
@@ -387,7 +426,7 @@ namespace AIAssistantSQL.Services
                     var interpretation = responseElement.GetString();
                     if (!string.IsNullOrWhiteSpace(interpretation))
                     {
-                        _logger.LogInformation("? InterpretaciÛn generada exitosamente");
+                        _logger.LogInformation("? InterpretaciÔøΩn generada exitosamente");
                         return interpretation;
                     }
                 }
@@ -424,7 +463,7 @@ namespace AIAssistantSQL.Services
                 }
                 else
                 {
-                    _logger.LogWarning($"?? Ollama respondiÛ: {response.StatusCode}");
+                    _logger.LogWarning($"?? Ollama respondiÔøΩ: {response.StatusCode}");
                     return false;
                 }
             }
@@ -439,47 +478,31 @@ namespace AIAssistantSQL.Services
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("You are an expert SQL query generator.");
+            sb.AppendLine("Generate a SQL query for this question.");
             sb.AppendLine();
-            sb.AppendLine("TASK: Generate a SQL SELECT query based on the user's question and the database schema provided.");
-            sb.AppendLine();
-            sb.AppendLine("RULES:");
-            sb.AppendLine("1. Return ONLY the SQL query (no explanations, no markdown, no code blocks)");
-            sb.AppendLine("2. Use EXACT table and column names from the schema (case-sensitive, including underscores)");
-            sb.AppendLine("3. For SQL Server, use TOP instead of LIMIT");
-            sb.AppendLine("4. Analyze which tables are relevant to the question before building the query");
+            sb.AppendLine($"Database: {schema.DatabaseName} ({schema.DatabaseType})");
             sb.AppendLine();
             
-            sb.AppendLine($"DATABASE: {schema.DatabaseName} ({schema.DatabaseType})");
-            sb.AppendLine();
-            sb.AppendLine("AVAILABLE TABLES:");
-            sb.AppendLine();
-
+            sb.AppendLine("Schema:");
             foreach (var table in schema.Tables)
             {
-                sb.AppendLine($"TABLE: {table.TableName}");
-                sb.AppendLine("  Columns:");
+                sb.AppendLine($"\nTABLE {table.TableName}:");
                 foreach (var column in table.Columns)
                 {
                     var pk = table.PrimaryKeys.Contains(column.ColumnName) ? " [PK]" : "";
-                    sb.AppendLine($"    - {column.ColumnName} ({column.DataType}){pk}");
+                    sb.AppendLine($"  - {column.ColumnName} ({column.DataType}){pk}");
                 }
-
-                if (table.ForeignKeys.Any())
-                {
-                    sb.AppendLine("  Foreign Keys:");
-                    foreach (var fk in table.ForeignKeys)
-                    {
-                        sb.AppendLine($"    - {fk.ColumnName} ? {fk.ReferencedTable}.{fk.ReferencedColumn}");
-                    }
-                }
-                
-                sb.AppendLine();
             }
-
-            sb.AppendLine($"USER QUESTION: {naturalLanguageQuery}");
+            
             sb.AppendLine();
-            sb.AppendLine("GENERATE SQL QUERY:");
+            sb.AppendLine($"Question: {naturalLanguageQuery}");
+            sb.AppendLine();
+            sb.AppendLine("Rules:");
+            sb.AppendLine("1. Use EXACT column names from schema above (case-sensitive)");
+            sb.AppendLine("2. Return only SQL query, no explanations");
+            sb.AppendLine("3. For SQL Server use TOP, not LIMIT");
+            sb.AppendLine();
+            sb.AppendLine("SQL Query:");
 
             return sb.ToString();
         }
@@ -488,7 +511,7 @@ namespace AIAssistantSQL.Services
             string originalQuestion, 
             string executedSql, 
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory)
+            List<string>? conversationHistory)
         {
             var sb = new StringBuilder();
 
@@ -499,7 +522,7 @@ namespace AIAssistantSQL.Services
             sb.AppendLine("2. Be clear and concise");
             sb.AppendLine("3. Use ONLY the data from the results provided");
             sb.AppendLine("4. If there's 1 result and user asked for 'the most/least', say 'EL documento es...' (singular)");
-            sb.AppendLine("5. If there are multiple results, say 'EncontrÈ X documentos...' (plural)");
+            sb.AppendLine("5. If there are multiple results, say 'EncontrÔøΩ X documentos...' (plural)");
             sb.AppendLine("6. Present data in markdown tables");
             sb.AppendLine();
             sb.AppendLine($"USER QUESTION: {originalQuestion}");
@@ -566,7 +589,7 @@ namespace AIAssistantSQL.Services
             sb.AppendLine("| " + string.Join(" | ", columns) + " |");
             sb.AppendLine("|" + string.Join("|", columns.Select(c => "---")) + "|");
 
-            // Rows (m·ximo 50 para no saturar la vista)
+            // Rows (mÔøΩximo 50 para no saturar la vista)
             foreach (var row in results.Take(50))
             {
                 sb.AppendLine("| " + string.Join(" | ", columns.Select(c => row[c]?.ToString() ?? "NULL")) + " |");
@@ -575,7 +598,7 @@ namespace AIAssistantSQL.Services
             if (results.Count > 50)
             {
                 sb.AppendLine();
-                sb.AppendLine($"*... y {results.Count - 50} filas m·s*");
+                sb.AppendLine($"*... y {results.Count - 50} filas mÔøΩs*");
             }
 
             sb.AppendLine();
@@ -615,7 +638,7 @@ namespace AIAssistantSQL.Services
                 if (string.IsNullOrWhiteSpace(trimmedLine))
                     continue;
 
-                // Si la lÌnea parece ser SQL
+                // Si la lÔøΩnea parece ser SQL
                 if (trimmedLine.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
                     trimmedLine.StartsWith("WITH", StringComparison.OrdinalIgnoreCase) ||
                     sqlLines.Any())

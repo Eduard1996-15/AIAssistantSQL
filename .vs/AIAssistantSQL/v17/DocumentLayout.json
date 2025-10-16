@@ -1,30 +1,10 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\",
+  "WorkspaceRootPath": "C:\\Users\\Admin\\Documents\\PROYECTOS DGAT\\AIAssistantSQL\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\source\\repos\\aiassistantsql\\aiassistantsql\\controllers\\querycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\controllers\\querycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\source\\repos\\aiassistantsql\\aiassistantsql\\models\\querymodels.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\models\\querymodels.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\source\\repos\\aiassistantsql\\aiassistantsql\\interfaces\\iqueryrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\interfaces\\iqueryrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\source\\repos\\aiassistantsql\\aiassistantsql\\repositories\\queryrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\repositories\\queryrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\source\\repos\\aiassistantsql\\aiassistantsql\\interfaces\\isqlvalidatorservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\interfaces\\isqlvalidatorservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\source\\repos\\aiassistantsql\\aiassistantsql\\services\\sqlvalidatorservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\services\\sqlvalidatorservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|c:\\users\\admin\\documents\\proyectos dgat\\aiassistantsql\\aiassistantsql\\services\\enhancedpromptservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F28DCA09-264B-49E9-8978-2449A622F4E2}|AIAssistantSQL\\AIAssistantSQL.csproj|solutionrelative:aiassistantsql\\services\\enhancedpromptservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -34,7 +14,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 358,
-          "SelectedChildIndex": 7,
+          "SelectedChildIndex": 3,
           "Children": [
             {
               "$type": "Bookmark",
@@ -45,79 +25,20 @@
               "Name": "ST:0:0:{3ae79031-e1bc-11d0-8f78-00a0c9110057}"
             },
             {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "SqlValidatorService.cs",
-              "DocumentMoniker": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Services\\SqlValidatorService.cs",
-              "RelativeDocumentMoniker": "AIAssistantSQL\\Services\\SqlValidatorService.cs",
-              "ToolTip": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Services\\SqlValidatorService.cs",
-              "RelativeToolTip": "AIAssistantSQL\\Services\\SqlValidatorService.cs",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-10-05T04:42:58.99Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "ISqlValidatorService.cs",
-              "DocumentMoniker": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Interfaces\\ISqlValidatorService.cs",
-              "RelativeDocumentMoniker": "AIAssistantSQL\\Interfaces\\ISqlValidatorService.cs",
-              "ToolTip": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Interfaces\\ISqlValidatorService.cs",
-              "RelativeToolTip": "AIAssistantSQL\\Interfaces\\ISqlValidatorService.cs",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-10-05T04:42:58.983Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "QueryRepository.cs",
-              "DocumentMoniker": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Repositories\\QueryRepository.cs",
-              "RelativeDocumentMoniker": "AIAssistantSQL\\Repositories\\QueryRepository.cs",
-              "ToolTip": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Repositories\\QueryRepository.cs",
-              "RelativeToolTip": "AIAssistantSQL\\Repositories\\QueryRepository.cs",
-              "ViewState": "AgIAAFwAAAAAAAAAAIBhwAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-10-05T04:35:33.275Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "IQueryRepository.cs",
-              "DocumentMoniker": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Interfaces\\IQueryRepository.cs",
-              "RelativeDocumentMoniker": "AIAssistantSQL\\Interfaces\\IQueryRepository.cs",
-              "ToolTip": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Interfaces\\IQueryRepository.cs",
-              "RelativeToolTip": "AIAssistantSQL\\Interfaces\\IQueryRepository.cs",
-              "ViewState": "AgIAABAAAAAAAAAAAABZwAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-10-05T04:35:07.135Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "QueryModels.cs",
-              "DocumentMoniker": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Models\\QueryModels.cs",
-              "RelativeDocumentMoniker": "AIAssistantSQL\\Models\\QueryModels.cs",
-              "ToolTip": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Models\\QueryModels.cs",
-              "RelativeToolTip": "AIAssistantSQL\\Models\\QueryModels.cs",
-              "ViewState": "AgIAAEwAAAAAAAAAAABZwAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-10-05T04:34:48.453Z",
-              "EditorCaption": ""
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{cce594b6-0c39-4442-ba28-10c64ac7e89f}"
             },
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "QueryController.cs",
-              "DocumentMoniker": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Controllers\\QueryController.cs",
-              "RelativeDocumentMoniker": "AIAssistantSQL\\Controllers\\QueryController.cs",
-              "ToolTip": "C:\\Users\\Admin\\source\\repos\\AIAssistantSQL\\AIAssistantSQL\\Controllers\\QueryController.cs",
-              "RelativeToolTip": "AIAssistantSQL\\Controllers\\QueryController.cs",
-              "ViewState": "AgIAANkDAAAAAAAAAAAAAPEDAAAAAAAAAAAAAA==",
+              "Title": "EnhancedPromptService.cs",
+              "DocumentMoniker": "C:\\Users\\Admin\\Documents\\PROYECTOS DGAT\\AIAssistantSQL\\AIAssistantSQL\\Services\\EnhancedPromptService.cs",
+              "RelativeDocumentMoniker": "AIAssistantSQL\\Services\\EnhancedPromptService.cs",
+              "ToolTip": "C:\\Users\\Admin\\Documents\\PROYECTOS DGAT\\AIAssistantSQL\\AIAssistantSQL\\Services\\EnhancedPromptService.cs",
+              "RelativeToolTip": "AIAssistantSQL\\Services\\EnhancedPromptService.cs",
+              "ViewState": "AgIAAEwBAAAAAAAAAAAIwFwBAAAqAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-10-05T04:00:10.387Z",
+              "WhenOpened": "2025-10-12T23:35:17.92Z",
               "EditorCaption": ""
             }
           ]

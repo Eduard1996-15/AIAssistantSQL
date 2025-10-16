@@ -19,10 +19,10 @@ namespace AIAssistantSQL.Interfaces
             string originalQuestion,
             string executedSql,
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory = null);
+            List<string>? conversationHistory = null);
 
         /// <summary>
-        /// Verifica si Ollama est� disponible
+        /// Verifica si Ollama est� disponible
         /// </summary>
         Task<bool> IsAvailableAsync();
 
@@ -40,5 +40,10 @@ namespace AIAssistantSQL.Interfaces
         /// Cambia el modelo a usar
         /// </summary>
         void SetModel(string modelName);
+
+        /// <summary>
+        /// Limpia la caché de modelos para forzar una actualización
+        /// </summary>
+        void ClearModelsCache();
     }
 }

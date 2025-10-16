@@ -1,5 +1,6 @@
 using AIAssistantSQL.Interfaces;
 using AIAssistantSQL.Services;
+using AIAssistantSQL.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AIAssistantSQL.Controllers
@@ -38,22 +39,310 @@ namespace AIAssistantSQL.Controllers
             return View();
         }
 
+        /// <summary>
+        /// Vista del selector de modelos avanzado
+        /// </summary>
+        public async Task<IActionResult> ModelSelector()
+        {
+            try
+            {
+                var models = await _ollamaService.GetAvailableModelsAsync();
+                var currentModel = _ollamaService.GetCurrentModel();
+                var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
+
+                var viewModel = new ModelSelectorViewModel
+                {
+                    CurrentModel = currentModel,
+                    AvailableModels = models,
+                    IsOllamaAvailable = isOllamaAvailable,
+                    LastUpdated = DateTime.Now
+                };
+
+                ViewBag.IsOllamaAvailable = isOllamaAvailable;
+
+                return View(viewModel);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cargando selector de modelos");
+                TempData["Error"] = "Error cargando la lista de modelos";
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        /// <summary>
+        /// Actualiza la lista de modelos disponibles
+        /// </summary>
         [HttpPost]
-        public IActionResult ChangeModel(string modelName)
+        public async Task<IActionResult> RefreshModels()
+        {
+            try
+            {
+                // Limpiar cachÃ© para forzar actualizaciÃ³n
+                _ollamaService.ClearModelsCache();
+                
+                var models = await _ollamaService.GetAvailableModelsAsync();
+                
+                return Json(new
+                {
+                    success = true,
+                    message = "Modelos actualizados correctamente",
+                    count = models.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error actualizando modelos");
+                return Json(new
+                {
+                    success = false,
+                    message = "Error actualizando modelos: " + ex.Message
+                });
+            }
+        }
+
+        /// <summary>
+        /// Cambia el modelo activo
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> SetModel(string modelName)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(modelName))
                 {
-                    TempData["Error"] = "Por favor selecciona un modelo válido";
+                    return Json(new
+                    {
+                        success = false,
+                        message = "Nombre de modelo requerido"
+                    });
+                }
+
+                // Verificar que el modelo existe
+                var models = await _ollamaService.GetAvailableModelsAsync();
+                if (!models.Any(m => m.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Json(new
+                    {
+                        success = false,
+                        message = "Modelo no encontrado"
+                    });
+                }
+
+                _ollamaService.SetModel(modelName);
+                
+                _logger.LogInformation($"Modelo cambiado a: {modelName}");
+
+                return Json(new
+                {
+                    success = true,
+                    message = $"Modelo cambiado a: {modelName}"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cambiando modelo");
+                return Json(new
+                {
+                    success = false,
+                    message = "Error cambiando modelo: " + ex.Message
+                });
+            }
+        }
+
+        /// <summary>
+        /// Prueba un modelo especÃ­fico
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> TestModel(string modelName, string testQuery)
+        {
+            var startTime = DateTime.Now;
+            
+            try
+            {
+                if (string.IsNullOrWhiteSpace(modelName) || string.IsNullOrWhiteSpace(testQuery))
+                {
+                    return Json(new
+                    {
+                        success = false,
+                        message = "Modelo y consulta son requeridos"
+                    });
+                }
+
+                // Guardar modelo actual
+                var originalModel = _ollamaService.GetCurrentModel();
+                
+                // Cambiar temporalmente al modelo de prueba
+                _ollamaService.SetModel(modelName);
+
+                try
+                {
+                    // Crear un esquema de prueba simple
+                    var testSchema = new AIAssistantSQL.Models.DatabaseSchema
+                    {
+                        DatabaseName = "TestDB",
+                        DatabaseType = AIAssistantSQL.Models.DatabaseType.SqlServer,
+                        Tables = new List<AIAssistantSQL.Models.TableSchema>
+                        {
+                            new AIAssistantSQL.Models.TableSchema
+                            {
+                                TableName = "Productos",
+                                Columns = new List<AIAssistantSQL.Models.ColumnSchema>
+                                {
+                                    new AIAssistantSQL.Models.ColumnSchema { ColumnName = "Id", DataType = "int", IsNullable = false },
+                                    new AIAssistantSQL.Models.ColumnSchema { ColumnName = "Nombre", DataType = "varchar(100)", IsNullable = false },
+                                    new AIAssistantSQL.Models.ColumnSchema { ColumnName = "Precio", DataType = "decimal(10,2)", IsNullable = false }
+                                },
+                                PrimaryKeys = new List<string> { "Id" },
+                                ForeignKeys = new List<AIAssistantSQL.Models.ForeignKeySchema>()
+                            }
+                        }
+                    };
+
+                    // Generar consulta
+                    var result = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(testQuery, testSchema);
+                    
+                    var executionTime = (DateTime.Now - startTime).TotalMilliseconds;
+
+                    return Json(new
+                    {
+                        success = true,
+                        result = result,
+                        executionTime = Math.Round(executionTime, 0)
+                    });
+                }
+                finally
+                {
+                    // Restaurar modelo original
+                    _ollamaService.SetModel(originalModel);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error probando modelo {modelName}");
+                
+                var executionTime = (DateTime.Now - startTime).TotalMilliseconds;
+                
+                return Json(new
+                {
+                    success = false,
+                    message = ex.Message,
+                    executionTime = Math.Round(executionTime, 0)
+                });
+            }
+        }
+
+        /// <summary>
+        /// Obtiene la lista de modelos de Ollama disponibles (endpoint JSON para AJAX)
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetOllamaModels()
+        {
+            try
+            {
+                var models = await _ollamaService.GetAvailableModelsAsync();
+                var currentModel = _ollamaService.GetCurrentModel();
+
+                return Json(new
+                {
+                    success = true,
+                    models = models.Select(m => new
+                    {
+                        name = m.Name,
+                        size = m.Size,
+                        modifiedAt = m.ModifiedAt
+                    }),
+                    currentModel = currentModel,
+                    count = models.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo modelos de Ollama");
+                return Json(new
+                {
+                    success = false,
+                    message = "Error al obtener modelos: " + ex.Message,
+                    models = new object[] { },
+                    currentModel = _ollamaService.GetCurrentModel()
+                });
+            }
+        }
+
+        /// <summary>
+        /// Cambia el modelo activo (endpoint JSON para AJAX)
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> ChangeModel([FromBody] ChangeModelRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request?.ModelName))
+                {
+                    return Json(new
+                    {
+                        success = false,
+                        message = "Nombre de modelo requerido"
+                    });
+                }
+
+                // Verificar que el modelo existe
+                var models = await _ollamaService.GetAvailableModelsAsync();
+                if (!models.Any(m => m.Name.Equals(request.ModelName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Json(new
+                    {
+                        success = false,
+                        message = "Modelo no encontrado en Ollama"
+                    });
+                }
+
+                _ollamaService.SetModel(request.ModelName);
+                
+                _logger.LogInformation($"Usuario cambiÃ³ el modelo a: {request.ModelName}");
+
+                return Json(new
+                {
+                    success = true,
+                    message = $"Modelo cambiado exitosamente a: {request.ModelName}",
+                    modelName = request.ModelName
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al cambiar modelo");
+                return Json(new
+                {
+                    success = false,
+                    message = "Error al cambiar modelo: " + ex.Message
+                });
+            }
+        }
+
+        /// <summary>
+        /// Clase para recibir la peticiÃ³n de cambio de modelo
+        /// </summary>
+        public class ChangeModelRequest
+        {
+            public string ModelName { get; set; } = string.Empty;
+        }
+
+        [HttpPost]
+        public IActionResult ChangeModelFromView(string modelName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(modelName))
+                {
+                    TempData["Error"] = "Por favor selecciona un modelo vÃ¡lido";
                     return RedirectToAction(nameof(Index));
                 }
 
                 _ollamaService.SetModel(modelName);
                 
-                TempData["Success"] = $"? Modelo cambiado exitosamente a: <strong>{modelName}</strong><br/>Las próximas consultas usarán este modelo.";
+                TempData["Success"] = $"âœ… Modelo cambiado exitosamente a: <strong>{modelName}</strong><br/>Las prÃ³ximas consultas usarÃ¡n este modelo.";
                 
-                _logger.LogInformation($"Usuario cambió el modelo a: {modelName}");
+                _logger.LogInformation($"Usuario cambiÃ³ el modelo a: {modelName}");
 
                 return RedirectToAction(nameof(Index));
             }
@@ -72,7 +361,7 @@ namespace AIAssistantSQL.Controllers
             {
                 if (string.IsNullOrWhiteSpace(providerName))
                 {
-                    TempData["Error"] = "Por favor selecciona un proveedor válido";
+                    TempData["Error"] = "Por favor selecciona un proveedor vï¿½lido";
                     return RedirectToAction(nameof(Index));
                 }
 
@@ -80,7 +369,7 @@ namespace AIAssistantSQL.Controllers
 
                 _logger.LogInformation($"?? Intentando cambiar de '{currentProvider}' a '{providerName}'...");
 
-                // ? VALIDAR CONEXIÓN antes de cambiar
+                // ? VALIDAR CONEXIï¿½N antes de cambiar
                 IOllamaService newService;
                 
                 switch (providerName.ToLower())
@@ -101,26 +390,26 @@ namespace AIAssistantSQL.Controllers
                         return RedirectToAction(nameof(Index));
                 }
 
-                // Probar conexión
+                // Probar conexiï¿½n
                 _logger.LogInformation($"?? Verificando disponibilidad de {providerName}...");
                 bool isAvailable = await newService.IsAvailableAsync();
 
                 if (!isAvailable)
                 {
-                    _logger.LogWarning($"? {providerName} no está disponible");
+                    _logger.LogWarning($"? {providerName} no estï¿½ disponible");
                     
                     TempData["Error"] = GenerateErrorMessage(providerName);
                     
                     return RedirectToAction(nameof(Index));
                 }
 
-                // ? Conexión exitosa, cambiar proveedor
+                // ? Conexiï¿½n exitosa, cambiar proveedor
                 _aiServiceFactory.SetProvider(providerName);
                 
                 TempData["Success"] = $"? Proveedor cambiado exitosamente a: <strong>{providerName}</strong><br/>" +
-                                     $"Conexión verificada correctamente. Todas las consultas usarán este proveedor de IA.";
+                                     $"Conexiï¿½n verificada correctamente. Todas las consultas usarï¿½n este proveedor de IA.";
                 
-                _logger.LogInformation($"? Usuario cambió el proveedor a: {providerName}");
+                _logger.LogInformation($"? Usuario cambiï¿½ el proveedor a: {providerName}");
 
                 return RedirectToAction(nameof(Index));
             }
@@ -137,7 +426,7 @@ namespace AIAssistantSQL.Controllers
         {
             try
             {
-                _logger.LogInformation($"?? Probando conexión a {providerName}...");
+                _logger.LogInformation($"?? Probando conexiï¿½n a {providerName}...");
 
                 IOllamaService service;
                 
@@ -171,7 +460,7 @@ namespace AIAssistantSQL.Controllers
                     return Json(new
                     {
                         success = true,
-                        message = $"? Conexión exitosa con {providerName}",
+                        message = $"? Conexiï¿½n exitosa con {providerName}",
                         details = GetSuccessDetails(providerName)
                     });
                 }
@@ -194,7 +483,7 @@ namespace AIAssistantSQL.Controllers
                 return Json(new
                 {
                     success = false,
-                    message = $"Error al probar conexión: {ex.Message}",
+                    message = $"Error al probar conexiï¿½n: {ex.Message}",
                     details = ex.ToString()
                 });
             }
@@ -205,12 +494,12 @@ namespace AIAssistantSQL.Controllers
             return providerName.ToLower() switch
             {
                 "ollama" => @"
-                    <strong>? Ollama no está disponible</strong><br/>
+                    <strong>? Ollama no estï¿½ disponible</strong><br/>
                     <br/>
                     <strong>Posibles causas:</strong><br/>
-                    • Ollama no está ejecutándose<br/>
-                    • Puerto 11434 bloqueado<br/>
-                    • Modelo no instalado<br/>
+                    ï¿½ Ollama no estï¿½ ejecutï¿½ndose<br/>
+                    ï¿½ Puerto 11434 bloqueado<br/>
+                    ï¿½ Modelo no instalado<br/>
                     <br/>
                     <strong>Soluciones:</strong><br/>
                     1. Ejecutar: <code>ollama serve</code><br/>
@@ -218,30 +507,30 @@ namespace AIAssistantSQL.Controllers
                     3. Verificar: <code>curl http://localhost:11434/api/tags</code>",
 
                 "googleai" or "gemini" => @"
-                    <strong>? Google AI no está disponible</strong><br/>
+                    <strong>? Google AI no estï¿½ disponible</strong><br/>
                     <br/>
                     <strong>Posibles causas:</strong><br/>
-                    • API Key inválida o expirada<br/>
-                    • Sin conexión a internet<br/>
-                    • Límites de uso excedidos<br/>
+                    ï¿½ API Key invï¿½lida o expirada<br/>
+                    ï¿½ Sin conexiï¿½n a internet<br/>
+                    ï¿½ Lï¿½mites de uso excedidos<br/>
                     <br/>
                     <strong>Soluciones:</strong><br/>
                     1. Verificar API Key en <code>appsettings.json</code><br/>
                     2. Obtener nueva key en: <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a><br/>
-                    3. Verificar conexión a internet",
+                    3. Verificar conexiï¿½n a internet",
 
                 "deepseek" or "deepseekai" => @"
-                    <strong>? DeepSeek AI no está disponible</strong><br/>
+                    <strong>? DeepSeek AI no estï¿½ disponible</strong><br/>
                     <br/>
                     <strong>Posibles causas:</strong><br/>
-                    • API Key inválida o expirada<br/>
-                    • Sin conexión a internet<br/>
-                    • Créditos agotados<br/>
+                    ï¿½ API Key invï¿½lida o expirada<br/>
+                    ï¿½ Sin conexiï¿½n a internet<br/>
+                    ï¿½ Crï¿½ditos agotados<br/>
                     <br/>
                     <strong>Soluciones:</strong><br/>
                     1. Verificar API Key en <code>appsettings.json</code><br/>
                     2. Obtener nueva key en: <a href='https://platform.deepseek.com/api_keys' target='_blank'>DeepSeek Platform</a><br/>
-                    3. Verificar saldo de créditos",
+                    3. Verificar saldo de crï¿½ditos",
 
                 _ => $"<strong>? No se pudo conectar con {providerName}</strong>"
             };
@@ -251,10 +540,10 @@ namespace AIAssistantSQL.Controllers
         {
             return providerName.ToLower() switch
             {
-                "ollama" => "Ollama está funcionando correctamente en http://localhost:11434",
-                "googleai" or "gemini" => "Conexión exitosa con Google AI (Gemini). API Key válida.",
-                "deepseek" or "deepseekai" => "Conexión exitosa con DeepSeek AI. API Key válida y créditos disponibles.",
-                _ => "Conexión exitosa"
+                "ollama" => "Ollama estï¿½ funcionando correctamente en http://localhost:11434",
+                "googleai" or "gemini" => "Conexiï¿½n exitosa con Google AI (Gemini). API Key vï¿½lida.",
+                "deepseek" or "deepseekai" => "Conexiï¿½n exitosa con DeepSeek AI. API Key vï¿½lida y crï¿½ditos disponibles.",
+                _ => "Conexiï¿½n exitosa"
             };
         }
 
@@ -262,10 +551,10 @@ namespace AIAssistantSQL.Controllers
         {
             return providerName.ToLower() switch
             {
-                "ollama" => "Ollama no responde en http://localhost:11434. Asegúrate de que esté ejecutándose: ollama serve",
-                "googleai" or "gemini" => "No se pudo conectar con Google AI. Verifica tu API Key y conexión a internet.",
-                "deepseek" or "deepseekai" => "No se pudo conectar con DeepSeek AI. Verifica tu API Key y créditos disponibles.",
-                _ => "Error de conexión"
+                "ollama" => "Ollama no responde en http://localhost:11434. Asegï¿½rate de que estï¿½ ejecutï¿½ndose: ollama serve",
+                "googleai" or "gemini" => "No se pudo conectar con Google AI. Verifica tu API Key y conexiï¿½n a internet.",
+                "deepseek" or "deepseekai" => "No se pudo conectar con DeepSeek AI. Verifica tu API Key y crï¿½ditos disponibles.",
+                _ => "Error de conexiï¿½n"
             };
         }
     }

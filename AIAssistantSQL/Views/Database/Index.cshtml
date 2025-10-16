@@ -1,12 +1,12 @@
-@model DatabaseConfigViewModel
+@model AIAssistantSQL.Models.ViewModels.DatabaseConfigViewModel
 @{
-    ViewData["Title"] = "ConfiguraciÛn de Base de Datos";
+    ViewData["Title"] = "ConfiguraciÔøΩn de Base de Datos";
 }
 
 <div class="row">
     <div class="col-md-12">
         <h1 class="mb-4">
-            <i class="bi bi-database-gear"></i> ConfiguraciÛn de Base de Datos
+            <i class="bi bi-database-gear"></i> ConfiguraciÔøΩn de Base de Datos
         </h1>
     </div>
 </div>
@@ -29,7 +29,7 @@
                 <i class="bi bi-eye"></i> Ver Esquema
             </a>
             <form asp-controller="Database" asp-action="Disconnect" method="post" class="d-inline">
-                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('øDesea desconectar?')">
+                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('ÔøΩDesea desconectar?')">
                     <i class="bi bi-plug"></i> Desconectar
                 </button>
             </form>
@@ -39,14 +39,14 @@
 else if (Model.IsSchemaLoaded && !Model.IsConnected)
 {
     <div class="alert alert-warning">
-        <h5><i class="bi bi-exclamation-triangle"></i> Esquema Cargado - Falta Configurar ConexiÛn</h5>
+        <h5><i class="bi bi-exclamation-triangle"></i> Esquema Cargado - Falta Configurar ConexiÔøΩn</h5>
         <p class="mb-1"><strong>Base de Datos:</strong> @Model.LoadedDatabaseName</p>
         <p class="mb-1"><strong>Tablas:</strong> @Model.TableCount</p>
-        <p class="mb-3"><strong>Estado:</strong> <span class="badge bg-warning">Sin ConexiÛn</span></p>
-        <p class="mb-0">Tienes el esquema cargado pero necesitas configurar la cadena de conexiÛn para ejecutar consultas.</p>
+        <p class="mb-3"><strong>Estado:</strong> <span class="badge bg-warning">Sin ConexiÔøΩn</span></p>
+        <p class="mb-0">Tienes el esquema cargado pero necesitas configurar la cadena de conexiÔøΩn para ejecutar consultas.</p>
         <hr/>
         <a href="#connectionOnly" class="btn btn-warning">
-            <i class="bi bi-plug"></i> Configurar ConexiÛn Ahora
+            <i class="bi bi-plug"></i> Configurar ConexiÔøΩn Ahora
         </a>
     </div>
 }
@@ -58,17 +58,17 @@ else
 }
 
 <div class="row g-4 mb-4">
-    <!-- OPCI”N RECOMENDADA: Conectar y Cargar Todo -->
+    <!-- OPCIÔøΩN RECOMENDADA: Conectar y Cargar Todo -->
     <div class="col-md-12">
         <div class="card border-primary">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0">
-                    <i class="bi bi-star-fill"></i> OPCI”N RECOMENDADA: Conectar y Cargar Esquema Autom·ticamente
+                    <i class="bi bi-star-fill"></i> OPCIÔøΩN RECOMENDADA: Conectar y Cargar Esquema AutomÔøΩticamente
                 </h5>
             </div>
             <div class="card-body">
                 <p class="card-text">
-                    <strong>Esta es la forma m·s f·cil:</strong> Ingresa tu cadena de conexiÛn y autom·ticamente se extraer· toda la estructura de tu base de datos.
+                    <strong>Esta es la forma mÔøΩs fÔøΩcil:</strong> Ingresa tu cadena de conexiÔøΩn y automÔøΩticamente se extraerÔøΩ toda la estructura de tu base de datos.
                 </p>
                 
                 <form asp-controller="Database" asp-action="ConnectAndLoadSchema" method="post">
@@ -81,7 +81,7 @@ else
                             </select>
                         </div>
                         <div class="col-md-9">
-                            <label for="connectionStringMain" class="form-label">Cadena de ConexiÛn</label>
+                            <label for="connectionStringMain" class="form-label">Cadena de ConexiÔøΩn</label>
                             <input type="text" class="form-control" id="connectionStringMain" name="connectionString" required
                                    placeholder="Server=MISERVIDOR\SQLEXPRESS;Database=MiBaseDatos;Trusted_Connection=True;TrustServerCertificate=True;" />
                             <div class="form-text">
@@ -91,20 +91,42 @@ else
                     </div>
                     
                     <div class="alert alert-info mt-3 mb-3">
-                        <strong>?? Ejemplo para SQL Server (Trusted Connection):</strong><br/>
-                        <code>Server=SKILAINE3\SQLEXPRESS;Database=BD_SCU;Trusted_Connection=True;TrustServerCertificate=True;Integrated Security=True;</code>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>üìù SQL Server - Autenticaci√≥n Windows:</strong><br/>
+                                <code class="small">Server=MiServidor\SQLEXPRESS;Database=Ventas;Trusted_Connection=True;TrustServerCertificate=True;</code>
+                                <br/><br/>
+                                <strong>üìù SQL Server - Usuario/Contrase√±a:</strong><br/>
+                                <code class="small">Server=192.168.1.100;Database=Inventario;User Id=admin;Password=****;TrustServerCertificate=True;</code>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>üêò PostgreSQL Local:</strong><br/>
+                                <code class="small">Host=localhost;Database=productos;Username=postgres;Password=****;</code>
+                                <br/><br/>
+                                <strong>‚òÅÔ∏è Azure SQL Database:</strong><br/>
+                                <code class="small">Server=miserver.database.windows.net;Database=midb;User Id=admin@miserver;Password=****;</code>
+                            </div>
+                        </div>
                         <hr/>
-                        <strong>?? Ejemplo para SQL Server (Usuario/Password):</strong><br/>
-                        <code>Server=localhost\SQLEXPRESS;Database=MiDB;User Id=sa;Password=MiPassword123;TrustServerCertificate=True;</code>
-                        <hr/>
-                        <strong>?? Ejemplo para PostgreSQL:</strong><br/>
-                        <code>Host=localhost;Database=MiDB;Username=postgres;Password=MiPassword123;</code>
-                        <hr/>
-                        <div class="alert alert-warning mb-0 mt-2">
-                            <strong>?? Nota sobre barras invertidas:</strong><br/>
-                            Si copias y pegas desde otro lugar, aseg˙rate de usar una sola barra <code>\</code> (no doble <code>\\</code>).<br/>
-                            <strong>? Correcto:</strong> <code>SERVIDOR\INSTANCIA</code><br/>
-                            <strong>? Incorrecto:</strong> <code>SERVIDOR\\INSTANCIA</code>
+                        <div class="alert alert-warning mb-0 mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>üí° Notas importantes:</strong>
+                                    <ul class="mb-0 small">
+                                        <li>Reemplaza <strong>****</strong> con tu contrase√±a real</li>
+                                        <li>Los nombres de servidor y BD son ejemplos</li>
+                                        <li>Ajusta seg√∫n tu configuraci√≥n</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>‚ö†Ô∏è Formato de barras:</strong>
+                                    <ul class="mb-0 small">
+                                        <li>‚úÖ Correcto: <code>Servidor\Instancia</code></li>
+                                        <li>‚ùå Incorrecto: <code>Servidor\\Instancia</code></li>
+                                        <li>Usar solo una barra invertida</li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -112,7 +134,7 @@ else
                         <i class="bi bi-plug-fill"></i> Conectar y Extraer Esquema Completo
                     </button>
                     <small class="text-muted d-block mt-2">
-                        Se extraer·n autom·ticamente todas las tablas, columnas, claves primarias y for·neas
+                        Se extraerÔøΩn automÔøΩticamente todas las tablas, columnas, claves primarias y forÔøΩneas
                     </small>
                 </form>
             </div>
@@ -124,14 +146,14 @@ else
 <h4 class="mb-3">Otras Opciones</h4>
 
 <div class="row g-4">
-    <!-- OpciÛn 1: Cargar desde archivo -->
+    <!-- OpciÔøΩn 1: Cargar desde archivo -->
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-header bg-secondary text-white">
                 <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Cargar Esquema desde Archivo</h5>
             </div>
             <div class="card-body">
-                <p class="card-text">Si ya guardaste el esquema anteriormente, puedes subirlo aquÌ.</p>
+                <p class="card-text">Si ya guardaste el esquema anteriormente, puedes subirlo aquÔøΩ.</p>
                 
                 <form asp-controller="Database" asp-action="LoadFromFile" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
@@ -147,7 +169,7 @@ else
                 @if (!Model.IsConnected && Model.IsSchemaLoaded)
                 {
                     <hr id="connectionOnly"/>
-                    <h6 class="mt-3">Configurar ConexiÛn para este Esquema:</h6>
+                    <h6 class="mt-3">Configurar ConexiÔøΩn para este Esquema:</h6>
                     <form asp-controller="Database" asp-action="SetConnectionString" method="post">
                         <div class="mb-2">
                             <select class="form-select form-select-sm" name="databaseType" required>
@@ -161,7 +183,7 @@ else
                             <small class="text-muted">Usa una sola barra \ para el servidor</small>
                         </div>
                         <button type="submit" class="btn btn-sm btn-warning">
-                            <i class="bi bi-plug"></i> Configurar ConexiÛn
+                            <i class="bi bi-plug"></i> Configurar ConexiÔøΩn
                         </button>
                     </form>
                 }
@@ -169,7 +191,7 @@ else
         </div>
     </div>
 
-    <!-- OpciÛn 2: Guardar esquema actual -->
+    <!-- OpciÔøΩn 2: Guardar esquema actual -->
     @if (Model.IsSchemaLoaded)
     {
         <div class="col-md-6">
@@ -178,14 +200,14 @@ else
                     <h5 class="mb-0"><i class="bi bi-floppy"></i> Guardar Esquema Actual</h5>
                 </div>
                 <div class="card-body">
-                    <p class="card-text">Guarda el esquema actual en un archivo JSON para reutilizarlo despuÈs.</p>
+                    <p class="card-text">Guarda el esquema actual en un archivo JSON para reutilizarlo despuÔøΩs.</p>
                     
                     <form asp-controller="Database" asp-action="SaveSchemaToFile" method="post">
                         <div class="mb-3">
                             <label for="fileName" class="form-label">Nombre del Archivo</label>
                             <input type="text" class="form-control" id="fileName" name="fileName" 
                                    value="@($"{Model.LoadedDatabaseName}_schema.json")" required>
-                            <div class="form-text">Se guardar· en wwwroot/uploads/</div>
+                            <div class="form-text">Se guardarÔøΩ en wwwroot/uploads/</div>
                         </div>
                         <button type="submit" class="btn btn-success">
                             <i class="bi bi-floppy"></i> Guardar Esquema
@@ -201,42 +223,42 @@ else
     <div class="col-md-12">
         <div class="card">
             <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> øCÛmo funciona?</h5>
+                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> ÔøΩCÔøΩmo funciona?</h5>
             </div>
             <div class="card-body">
                 <h6>Flujo Recomendado:</h6>
                 <ol>
                     <li>
-                        <strong>Usa la OpciÛn Recomendada</strong> (arriba) para conectar directamente:
+                        <strong>Usa la OpciÔøΩn Recomendada</strong> (arriba) para conectar directamente:
                         <ul>
-                            <li>Ingresa tu cadena de conexiÛn (ejemplo: tu BD_SCU)</li>
-                            <li>El sistema extraer· autom·ticamente todas las tablas y su estructura</li>
-                            <li>Quedar· todo listo para hacer consultas</li>
+                            <li>Ingresa tu cadena de conexi√≥n (ver ejemplos arriba)</li>
+                            <li>El sistema extraerÔøΩ automÔøΩticamente todas las tablas y su estructura</li>
+                            <li>QuedarÔøΩ todo listo para hacer consultas</li>
                         </ul>
                     </li>
                     <li>
                         <strong>(Opcional) Guarda el esquema</strong> en un archivo JSON para reutilizarlo en otros proyectos sin volver a conectarte
                     </li>
                     <li>
-                        <strong>Ve a "Consultas"</strong> y pregunta en lenguaje natural (ejemplo: "muÈstrame todos los usuarios activos")
+                        <strong>Ve a "Consultas"</strong> y pregunta en lenguaje natural (ejemplo: "muÔøΩstrame todos los usuarios activos")
                     </li>
                 </ol>
 
                 <hr/>
 
-                <h6>Tipos de Cadena de ConexiÛn:</h6>
+                <h6>üí° Consejos √∫tiles:</h6>
                 <ul class="mb-0">
                     <li>
-                        <strong>Trusted Connection (Windows Auth):</strong>
-                        <code>Server=MIPC\SQLEXPRESS;Database=MiDB;Trusted_Connection=True;TrustServerCertificate=True;</code>
+                        <strong>Seguridad:</strong> El sistema NO guarda credenciales - solo extrae el esquema
                     </li>
                     <li>
-                        <strong>SQL Server Auth:</strong>
-                        <code>Server=localhost\SQLEXPRESS;Database=MiDB;User Id=sa;Password=****;TrustServerCertificate=True;</code>
+                        <strong>Rendimiento:</strong> La extracci√≥n puede tomar unos segundos en bases de datos grandes
                     </li>
                     <li>
-                        <strong>PostgreSQL:</strong>
-                        <code>Host=localhost;Database=MiDB;Username=postgres;Password=****;</code>
+                        <strong>Compatibilidad:</strong> Funciona con SQL Server 2012+, PostgreSQL 9.4+, Azure SQL
+                    </li>
+                    <li>
+                        <strong>Permisos:</strong> Solo necesita permisos de lectura (SELECT) en las tablas
                     </li>
                 </ul>
             </div>

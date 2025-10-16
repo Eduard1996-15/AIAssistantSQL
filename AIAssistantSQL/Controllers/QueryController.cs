@@ -1,5 +1,6 @@
 using AIAssistantSQL.Interfaces;
 using AIAssistantSQL.Models;
+using AIAssistantSQL.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 
@@ -13,7 +14,7 @@ namespace AIAssistantSQL.Controllers
         private readonly IQueryRepository _queryRepository;
         private readonly ILogger<QueryController> _logger;
 
-        // En memoria para demo - en producciÛn usar base de datos
+        // En memoria para demo - en producciÔøΩn usar base de datos
         private static List<QueryHistory> _queryHistory = new();
         
         // NUEVO: Manejo de conversaciones
@@ -39,7 +40,7 @@ namespace AIAssistantSQL.Controllers
             var currentConnection = DatabaseController.GetCurrentConnection();
             var currentSchema = _schemaLoaderService.GetCurrentSchema();
 
-            // Crear nueva conversaciÛn si no existe una activa
+            // Crear nueva conversaciÔøΩn si no existe una activa
             if (_currentConversationId == Guid.Empty)
             {
                 _currentConversationId = Guid.NewGuid();
@@ -56,12 +57,14 @@ namespace AIAssistantSQL.Controllers
             {
                 History = _queryHistory.OrderByDescending(q => q.Timestamp).Take(10).ToList(),
                 HasActiveConnection = currentConnection != null,
-                DatabaseName = currentSchema?.DatabaseName
+                DatabaseName = currentSchema?.DatabaseName,
+                DatabaseType = currentSchema?.DatabaseType.ToString(),
+                TableNames = currentSchema?.Tables.Select(t => t.TableName).ToList() ?? new List<string>()
             };
 
             if (currentConnection == null || currentSchema == null)
             {
-                TempData["Warning"] = "?? Primero debes configurar la conexiÛn a tu base de datos. <a href='/Database'>Ir a ConfiguraciÛn</a>";
+                TempData["Warning"] = "?? Primero debes configurar la conexiÔøΩn a tu base de datos. <a href='/Database'>Ir a ConfiguraciÔøΩn</a>";
             }
 
             return View(viewModel);
@@ -70,7 +73,9 @@ namespace AIAssistantSQL.Controllers
         [HttpPost]
         public async Task<IActionResult> Execute(string naturalLanguageQuery)
         {
-            var stopwatch = Stopwatch.StartNew();
+            var totalStopwatch = Stopwatch.StartNew();
+            var aiStopwatch = new Stopwatch();
+            var dbStopwatch = new Stopwatch();
             var response = new QueryResponse();
 
             try
@@ -80,7 +85,7 @@ namespace AIAssistantSQL.Controllers
                 if (currentSchema == null)
                 {
                     response.Success = false;
-                    response.ErrorMessage = "No hay esquema de base de datos cargado. Por favor cargue un esquema primero en la secciÛn de ConfiguraciÛn.";
+                    response.ErrorMessage = "No hay esquema de base de datos cargado. Por favor cargue un esquema primero en la secciÔøΩn de ConfiguraciÔøΩn.";
                     return Json(response);
                 }
 
@@ -90,7 +95,7 @@ namespace AIAssistantSQL.Controllers
                 var tableNames = string.Join(", ", currentSchema.Tables.Select(t => t.TableName));
                 _logger.LogInformation($"?? Tablas disponibles: {tableNames}");
 
-                // Validar que hay conexiÛn configurada
+                // Validar que hay conexiÔøΩn configurada
                 var currentConnection = DatabaseController.GetCurrentConnection();
                 string? connStr = currentConnection?.ConnectionString;
                 
@@ -100,7 +105,7 @@ namespace AIAssistantSQL.Controllers
                     if (string.IsNullOrWhiteSpace(connStr))
                     {
                         response.Success = false;
-                        response.ErrorMessage = "No hay conexiÛn configurada. Por favor configure la cadena de conexiÛn en la secciÛn de ConfiguraciÛn.";
+                        response.ErrorMessage = "No hay conexiÔøΩn configurada. Por favor configure la cadena de conexiÔøΩn en la secciÔøΩn de ConfiguraciÔøΩn.";
                         return Json(response);
                     }
                 }
@@ -108,12 +113,12 @@ namespace AIAssistantSQL.Controllers
                 // ? NUEVO: Obtener tipo de BD temprano para pasarlo a la IA
                 var databaseType = currentConnection?.DatabaseType ?? currentSchema.DatabaseType;
 
-                // Validar que Ollama est· disponible
+                // Validar que Ollama estÔøΩ disponible
                 var isOllamaAvailable = await _ollamaService.IsAvailableAsync();
                 if (!isOllamaAvailable)
                 {
                     response.Success = false;
-                    response.ErrorMessage = "Ollama no est· disponible. Verifique que estÈ ejecut·ndose en http://localhost:11434";
+                    response.ErrorMessage = "Ollama no estÔøΩ disponible. Verifique que estÔøΩ ejecutÔøΩndose en http://localhost:11434";
                     return Json(response);
                 }
 
@@ -130,18 +135,43 @@ namespace AIAssistantSQL.Controllers
                     LoadedAt = currentSchema.LoadedAt
                 };
                 
-                var generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(naturalLanguageQuery, schemaWithContext);
+                // PASO 1: An√°lisis contextual de la consulta
+                _logger.LogInformation($"üîç Analizando contexto para: {naturalLanguageQuery}");
+                
+                // Crear un prompt de an√°lisis que ayude a la IA a entender mejor
+                var contextualPrompt = $@"USER QUESTION: {naturalLanguageQuery}
 
-                _logger.LogInformation($"? SQL generado por IA: {generatedSql}");
+CONTEXT ANALYSIS: Before generating SQL, analyze what the user is asking for:
+- What type of data do they want?
+- Which tables might contain this information?
+- What relationships between tables might be needed?
+
+AVAILABLE DATABASE SCHEMA:
+{string.Join("\n", schemaWithContext.Tables.Select(t => 
+    $"Table: {t.TableName}\n" +
+    $"  Columns: {string.Join(", ", t.Columns.Select(c => $"{c.ColumnName} ({c.DataType})"))}\n" +
+    (t.ForeignKeys.Any() ? $"  Relations: {string.Join(", ", t.ForeignKeys.Select(fk => $"{fk.ColumnName} -> {fk.ReferencedTable}.{fk.ReferencedColumn}"))}" : "  Relations: None") + "\n"
+))}
+
+Based on this schema and the user question, generate the appropriate SQL query.
+Focus on using exact table and column names from the schema above.";
+
+                // Generar SQL con IA usando el contexto completo del esquema
+                _logger.LogInformation($"ü§ñ Generando SQL con contexto completo del esquema...");
+                aiStopwatch.Start();
+                var generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(contextualPrompt, schemaWithContext);
+                aiStopwatch.Stop();
+
+                _logger.LogInformation($"‚úÖ SQL generado por IA: {generatedSql}");
                 response.GeneratedSQL = generatedSql;
 
                 // Validar que el SQL sea seguro (solo SELECT)
                 if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
                 {
-                    _logger.LogWarning($"?? SQL no v·lido o no es SELECT");
+                    _logger.LogWarning($"?? SQL no vÔøΩlido o no es SELECT");
                     response.Success = false;
-                    response.ErrorMessage = "La consulta generada no es v·lida o no es una consulta SELECT segura.";
-                    response.NaturalLanguageResponse = "? No pude generar una consulta SQL v·lida para tu pregunta. Por favor intenta reformularla de manera m·s simple.";
+                    response.ErrorMessage = "La consulta generada no es vÔøΩlida o no es una consulta SELECT segura.";
+                    response.NaturalLanguageResponse = "? No pude generar una consulta SQL vÔøΩlida para tu pregunta. Por favor intenta reformularla de manera mÔøΩs simple.";
                     
                     AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
 
@@ -154,11 +184,11 @@ namespace AIAssistantSQL.Controllers
                 
                 if (!queryValidation.IsValid)
                 {
-                    _logger.LogError($"? VALIDACI”N FALLIDA: {queryValidation.Reason}");
-                    _logger.LogError($"? SQL problem·tico: {generatedSql}");
+                    _logger.LogError($"? VALIDACIÔøΩN FALLIDA: {queryValidation.Reason}");
+                    _logger.LogError($"? SQL problemÔøΩtico: {generatedSql}");
                     
-                    // Reintentar con un prompt m·s especÌfico que incluya el error
-                    _logger.LogInformation("?? Reintentando generaciÛn de SQL con feedback del error...");
+                    // Reintentar con un prompt mÔøΩs especÔøΩfico que incluya el error
+                    _logger.LogInformation("?? Reintentando generaciÔøΩn de SQL con feedback del error...");
                     var retryPrompt = $@"PREVIOUS ATTEMPT WAS INCORRECT!
 
 ERROR: {queryValidation.Reason}
@@ -178,10 +208,10 @@ Generate a corrected SQL query now:";
                     // Validar de nuevo
                     if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
                     {
-                        _logger.LogError($"? Reintento tambiÈn fallÛ en validaciÛn SELECT");
+                        _logger.LogError($"? Reintento tambiÔøΩn fallÔøΩ en validaciÔøΩn SELECT");
                         response.Success = false;
-                        response.ErrorMessage = "No se pudo generar una consulta SQL v·lida despuÈs de varios intentos.";
-                        response.NaturalLanguageResponse = $"? Tuve problemas generando la consulta SQL correcta.\n\n**Error detectado:** {queryValidation.Reason}\n\nIntenta ser m·s especÌfico o revisar en 'DiagnÛstico' quÈ columnas est·n disponibles.";
+                        response.ErrorMessage = "No se pudo generar una consulta SQL vÔøΩlida despuÔøΩs de varios intentos.";
+                        response.NaturalLanguageResponse = $"? Tuve problemas generando la consulta SQL correcta.\n\n**Error detectado:** {queryValidation.Reason}\n\nIntenta ser mÔøΩs especÔøΩfico o revisar en 'DiagnÔøΩstico' quÔøΩ columnas estÔøΩn disponibles.";
                         
                         AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
                         return Json(response);
@@ -191,10 +221,10 @@ Generate a corrected SQL query now:";
                     var secondValidation = ValidateQueryAgainstSchema(generatedSql, currentSchema);
                     if (!secondValidation.IsValid)
                     {
-                        _logger.LogError($"? Reintento tambiÈn fallÛ en validaciÛn de esquema: {secondValidation.Reason}");
+                        _logger.LogError($"? Reintento tambiÔøΩn fallÔøΩ en validaciÔøΩn de esquema: {secondValidation.Reason}");
                         response.Success = false;
                         response.ErrorMessage = secondValidation.Reason;
-                        response.NaturalLanguageResponse = $"? No pude generar una consulta v·lida.\n\n**Error:** {secondValidation.Reason}\n\n**Sugerencia:** Ve a la secciÛn 'DiagnÛstico' para ver las columnas exactas disponibles en cada tabla.";
+                        response.NaturalLanguageResponse = $"? No pude generar una consulta vÔøΩlida.\n\n**Error:** {secondValidation.Reason}\n\n**Sugerencia:** Ve a la secciÔøΩn 'DiagnÔøΩstico' para ver las columnas exactas disponibles en cada tabla.";
                         
                         AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
                         return Json(response);
@@ -213,112 +243,192 @@ Generate a corrected SQL query now:";
                     _logger.LogInformation($"?? SQL ajustado para PostgreSQL: {cleanedSql}");
                 }
 
-                // Obtener configuraciÛn de conexiÛn
+                // Obtener configuraciÔøΩn de conexiÔøΩn
                 var connectionString = connStr ?? HttpContext.Session.GetString("ConnectionString");
 
                 if (string.IsNullOrWhiteSpace(connectionString))
                 {
                     response.Success = false;
-                    response.ErrorMessage = "No hay cadena de conexiÛn configurada. Por favor configure la conexiÛn primero.";
+                    response.ErrorMessage = "No hay cadena de conexiÔøΩn configurada. Por favor configure la conexiÔøΩn primero.";
                     return Json(response);
                 }
 
                 // Ejecutar consulta
                 _logger.LogInformation($"Ejecutando SQL: {cleanedSql}");
                 
-                List<Dictionary<string, object>> results;
+                List<Dictionary<string, object>> results = new();
                 try
                 {
-                    results = await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType);
+                    // Medir tiempo de ejecuci√≥n en BD
+                    dbStopwatch.Start();
+                    results = (await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType))
+                        .Select(dict => dict.ToDictionary(kvp => kvp.Key, kvp => kvp.Value ?? (object)""))
+                        .ToList();
+                    dbStopwatch.Stop();
                 }
                 catch (Exception sqlEx)
                 {
-                    // ? NUEVO: Si hay error de SQL, reintentamos con el feedback del error
-                    _logger.LogError($"? Error ejecutando SQL: {sqlEx.Message}");
-                    _logger.LogInformation($"?? Reintentando con feedback del error SQL...");
+                    // üîÑ SISTEMA DE AUTO-CORRECCI√ìN INTELIGENTE
+                    _logger.LogError($"‚ùå Error ejecutando SQL: {sqlEx.Message}");
                     
-                    // Enviar el error a la IA para que corrija
-                    var errorFeedback = $@"The previous SQL query failed with this error:
-
-ERROR: {sqlEx.Message}
-
-FAILED SQL: {cleanedSql}
-
-ORIGINAL QUESTION: {naturalLanguageQuery}
-
-Please generate a corrected SQL query that fixes this error.
-Use ONLY tables and columns from the schema provided.";
-
-                    generatedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(errorFeedback, currentSchema);
-                    _logger.LogInformation($"? SQL corregido despuÈs de error: {generatedSql}");
+                    // Intentar hasta 3 correcciones
+                    const int maxRetries = 3;
+                    List<string> attemptedQueries = new() { cleanedSql };
+                    List<string> errorMessages = new() { sqlEx.Message };
                     
-                    response.GeneratedSQL = generatedSql;
-                    
-                    // Validar el nuevo SQL
-                    if (!_sqlValidatorService.IsValidSelectQuery(generatedSql))
+                    for (int attempt = 1; attempt <= maxRetries; attempt++)
                     {
-                        _logger.LogError($"? El SQL corregido tampoco es v·lido");
-                        response.Success = false;
-                        response.ErrorMessage = $"Error original: {sqlEx.Message}. No se pudo corregir la consulta.";
-                        response.NaturalLanguageResponse = $"? Hubo un error ejecutando la consulta:\n\n**Error:** {sqlEx.Message}\n\nLo intentÈ corregir pero no pude generar una consulta v·lida. Intenta ser m·s especÌfico.";
+                        _logger.LogInformation($"üîÑ Intento de correcci√≥n {attempt}/{maxRetries}...");
                         
-                        AddToHistory(naturalLanguageQuery, generatedSql, response.NaturalLanguageResponse, false);
-                        return Json(response);
-                    }
-                    
-                    // Limpiar y ejecutar el SQL corregido
-                    cleanedSql = _sqlValidatorService.CleanSqlQuery(generatedSql);
-                    
-                    // Agregar comillas si es PostgreSQL
-                    if (databaseType == DatabaseType.PostgreSQL)
-                    {
-                        cleanedSql = AddQuotesToPostgreSQLTables(cleanedSql, currentSchema);
-                        _logger.LogInformation($"?? SQL corregido ajustado para PostgreSQL: {cleanedSql}");
-                    }
-                    
-                    try
-                    {
-                        _logger.LogInformation($"?? Ejecutando SQL corregido: {cleanedSql}");
-                        results = await _queryRepository.ExecuteQueryAsync(cleanedSql, connectionString, databaseType);
-                        _logger.LogInformation($"? SQL corregido ejecutado exitosamente");
-                    }
-                    catch (Exception retryEx)
-                    {
-                        _logger.LogError($"? El SQL corregido tambiÈn fallÛ: {retryEx.Message}");
-                        response.Success = false;
-                        response.ErrorMessage = $"Error original: {sqlEx.Message}. Error al reintentar: {retryEx.Message}";
-                        response.NaturalLanguageResponse = $"? Hubo un error ejecutando la consulta:\n\n**Error:** {sqlEx.Message}\n\nIntentÈ corregirla pero el nuevo intento tambiÈn fallÛ:\n\n**Nuevo error:** {retryEx.Message}\n\nPor favor, intenta reformular tu pregunta de manera m·s especÌfica.";
+                        // Analizar el error para detectar columnas/tablas inv√°lidas
+                        var errorAnalysis = AnalyzeErrorForColumnFix(errorMessages.Last(), currentSchema);
                         
-                        AddToHistory(naturalLanguageQuery, cleanedSql, response.NaturalLanguageResponse, false);
-                        return Json(response);
+                        // Crear prompt de correcci√≥n cada vez m√°s espec√≠fico con esquema completo
+                        var errorFeedback = $@"WARNING: URGENT CORRECTION NEEDED - ATTEMPT {attempt}/{maxRetries}
+
+ORIGINAL USER QUESTION: {naturalLanguageQuery}
+
+PREVIOUS FAILED ATTEMPTS:
+{string.Join("\n", attemptedQueries.Select((q, i) => $"Attempt {i + 1}: {q}\nError: {errorMessages[i]}\n"))}
+
+COMPLETE DATABASE SCHEMA (USE EXACT NAMES - CASE SENSITIVE):
+{string.Join("\n", currentSchema.Tables.Select(t => 
+    $"Table: {t.TableName}\n" +
+    $"  Columns (COPY EXACTLY): {string.Join(", ", t.Columns.Select(c => $"{c.ColumnName} ({c.DataType})"))}\n" +
+    (t.PrimaryKeys.Any() ? $"  Primary Keys: {string.Join(", ", t.PrimaryKeys)}\n" : "") +
+    (t.ForeignKeys.Any() ? $"  Foreign Keys: {string.Join(", ", t.ForeignKeys.Select(fk => $"{fk.ColumnName} -> {fk.ReferencedTable}.{fk.ReferencedColumn}"))}\n" : "")
+))}
+
+ERROR ANALYSIS:
+- Last error: {errorMessages.Last()}
+- Type: {(errorMessages.Last().Contains("Invalid column name") || errorMessages.Last().Contains("no existe") ? "INVALID COLUMN NAME - Column does not exist in schema" : errorMessages.Last().Contains("Invalid object name") ? "INVALID TABLE NAME - Table does not exist" : "SQL syntax or logic error")}
+{errorAnalysis}
+
+CRITICAL CORRECTION RULES:
+1. COPY column names EXACTLY from schema above (case-sensitive: cedula NOT Cedula)
+2. If error says Invalid column name, find similar column in schema and use EXACT name
+3. Use ONLY tables and columns that exist in schema
+4. Verify spelling and case of ALL column names
+5. Make sure query is different from previous failed attempts
+6. Answer the original question: {naturalLanguageQuery}
+
+Generate corrected SQL query (ONLY the query, no explanations):";
+
+                        try 
+                        {
+                            var correctedSql = await _ollamaService.GenerateSQLFromNaturalLanguageAsync(errorFeedback, currentSchema);
+                            _logger.LogInformation($"üõ†Ô∏è SQL corregido (intento {attempt}): {correctedSql}");
+                            
+                            // Validar el nuevo SQL
+                            if (!_sqlValidatorService.IsValidSelectQuery(correctedSql))
+                            {
+                                _logger.LogWarning($"‚ö†Ô∏è SQL corregido no es v√°lido en intento {attempt}");
+                                continue;
+                            }
+                            
+                            // Limpiar y ejecutar el SQL corregido
+                            var cleanedCorrectedSql = _sqlValidatorService.CleanSqlQuery(correctedSql);
+                            
+                            // Agregar comillas si es PostgreSQL
+                            if (databaseType == DatabaseType.PostgreSQL)
+                            {
+                                cleanedCorrectedSql = AddQuotesToPostgreSQLTables(cleanedCorrectedSql, currentSchema);
+                                _logger.LogInformation($"üêò SQL ajustado para PostgreSQL: {cleanedCorrectedSql}");
+                            }
+                            
+                            try
+                            {
+                                _logger.LogInformation($"üöÄ Ejecutando SQL corregido (intento {attempt})...");
+                                results = (await _queryRepository.ExecuteQueryAsync(cleanedCorrectedSql, connectionString, databaseType))
+                                    .Select(dict => dict.ToDictionary(kvp => kvp.Key, kvp => kvp.Value ?? (object)""))
+                                    .ToList();
+                                
+                                // ‚úÖ ¬°√âXITO! Actualizar informaci√≥n de respuesta
+                                cleanedSql = cleanedCorrectedSql;
+                                response.GeneratedSQL = correctedSql;
+                                _logger.LogInformation($"‚úÖ SQL corregido ejecutado exitosamente en intento {attempt}");
+                                break; // Salir del loop de reintentos
+                            }
+                            catch (Exception retryEx)
+                            {
+                                _logger.LogError($"‚ùå Intento {attempt} fall√≥: {retryEx.Message}");
+                                attemptedQueries.Add(cleanedCorrectedSql);
+                                errorMessages.Add(retryEx.Message);
+                                
+                                // Si es el √∫ltimo intento, devolver error final
+                                if (attempt == maxRetries)
+                                {
+                                    response.Success = false;
+                                    response.ErrorMessage = $"Error despu√©s de {maxRetries} intentos de correcci√≥n";
+                                    response.NaturalLanguageResponse = $"üòû **No pude resolver tu consulta despu√©s de {maxRetries} intentos de correcci√≥n.**\n\n" +
+                                        $"**Error original:** {sqlEx.Message}\n\n" +
+                                        $"**Intentos realizados:**\n" +
+                                        string.Join("\n", attemptedQueries.Select((q, i) => $"{i + 1}. `{q.Substring(0, Math.Min(50, q.Length))}...`")) +
+                                        $"\n\nüí° **Sugerencias:**\n" +
+                                        $"- Intenta ser m√°s espec√≠fico con los nombres de tablas\n" +
+                                        $"- Verifica que los datos que buscas existan\n" +
+                                        $"- Prueba con una consulta m√°s simple";
+                                    
+                                    AddToHistory(naturalLanguageQuery, string.Join(" | ", attemptedQueries), response.NaturalLanguageResponse, false);
+                                    return Json(response);
+                                }
+                            }
+                        }
+                        catch (Exception aiEx)
+                        {
+                            _logger.LogError($"‚ùå Error en IA durante correcci√≥n {attempt}: {aiEx.Message}");
+                            
+                            if (attempt == maxRetries)
+                            {
+                                response.Success = false;
+                                response.ErrorMessage = $"Error en sistema de correcci√≥n: {aiEx.Message}";
+                                response.NaturalLanguageResponse = $"üòû Hubo un problema con el sistema de auto-correcci√≥n.\n\n**Error:** {aiEx.Message}";
+                                AddToHistory(naturalLanguageQuery, cleanedSql, response.NaturalLanguageResponse, false);
+                                return Json(response);
+                            }
+                        }
                     }
+                    
+                    // Si llegamos aqu√≠ y results es null, asignar lista vac√≠a para evitar errores
+                    results ??= new List<Dictionary<string, object>>();
                 }
 
-                stopwatch.Stop();
-
-                // NUEVO: Obtener contexto de conversaciÛn SOLO para interpretaciÛn
-                // NO para generaciÛn de SQL (evita confusiÛn)
+                // NUEVO: Obtener contexto de conversaci√≥n SOLO para interpretaci√≥n
+                // NO para generaci√≥n de SQL (evita confusi√≥n)
                 var conversationHistory = GetConversationHistory();
 
-                // NUEVO: Interpretar resultados con IA
-                _logger.LogInformation($"?? Interpretando resultados con IA...");
-                var naturalLanguageResponse = await _ollamaService.InterpretQueryResultsAsync(
-                    naturalLanguageQuery,
-                    cleanedSql,
-                    results,
-                    conversationHistory  // Solo para interpretaciÛn, NO para generaciÛn SQL
-                );
+                // NUEVO: Interpretar resultados con IA (con timeout y fallback)
+                string naturalLanguageResponse;
+                try
+                {
+                    _logger.LogInformation($"üí¨ Interpretando resultados con IA...");
+                    naturalLanguageResponse = await _ollamaService.InterpretQueryResultsAsync(
+                        naturalLanguageQuery,
+                        cleanedSql,
+                        results,
+                        conversationHistory
+                    );
+                }
+                catch (Exception interpretEx)
+                {
+                    // Si la interpretaci√≥n falla (timeout), usar respuesta simple
+                    _logger.LogWarning(interpretEx, "‚ö†Ô∏è Interpretaci√≥n IA fall√≥, usando respuesta simple");
+                    naturalLanguageResponse = GenerateSimpleResponse(naturalLanguageQuery, results.Count, cleanedSql);
+                }
 
                 response.Success = true;
                 response.Results = results;
                 response.RowCount = results.Count;
-                response.ExecutionTime = stopwatch.Elapsed;
+                response.ExecutionTime = totalStopwatch.Elapsed;
+                response.AIResponseTime = aiStopwatch.Elapsed;
+                response.DatabaseResponseTime = dbStopwatch.Elapsed;
+                response.TotalResponseTime = totalStopwatch.Elapsed;
                 response.NaturalLanguageResponse = naturalLanguageResponse;
 
                 // Agregar al historial con respuesta de IA
                 AddToHistory(naturalLanguageQuery, cleanedSql, naturalLanguageResponse, true);
 
-                // Agregar a la conversaciÛn actual
+                // Agregar a la conversaciÔøΩn actual
                 AddToConversation(naturalLanguageQuery, cleanedSql, naturalLanguageResponse, true);
 
                 _logger.LogInformation($"? Consulta exitosa: {results.Count} filas retornadas");
@@ -329,12 +439,15 @@ Use ONLY tables and columns from the schema provided.";
             {
                 _logger.LogError(ex, "Error al ejecutar consulta");
                 
-                stopwatch.Stop();
+                totalStopwatch.Stop();
 
                 response.Success = false;
                 response.ErrorMessage = ex.Message;
-                response.ExecutionTime = stopwatch.Elapsed;
-                response.NaturalLanguageResponse = $"? OcurriÛ un error al procesar tu consulta: {ex.Message}";
+                response.ExecutionTime = totalStopwatch.Elapsed;
+                response.AIResponseTime = aiStopwatch.Elapsed;
+                response.DatabaseResponseTime = dbStopwatch.Elapsed;
+                response.TotalResponseTime = totalStopwatch.Elapsed;
+                response.NaturalLanguageResponse = $"? OcurriÔøΩ un error al procesar tu consulta: {ex.Message}";
 
                 AddToHistory(naturalLanguageQuery, response.GeneratedSQL ?? "", response.NaturalLanguageResponse, false);
                 AddToConversation(naturalLanguageQuery, response.GeneratedSQL ?? "", response.NaturalLanguageResponse, false);
@@ -357,7 +470,7 @@ Use ONLY tables and columns from the schema provided.";
                 DatabaseName = currentSchema?.DatabaseName ?? "Unknown"
             };
 
-            TempData["Success"] = "? Nueva conversaciÛn iniciada";
+            TempData["Success"] = "? Nueva conversaciÔøΩn iniciada";
             return RedirectToAction(nameof(Index));
         }
 
@@ -442,7 +555,7 @@ Use ONLY tables and columns from the schema provided.";
         {
             var sqlUpper = sql.ToUpper();
             
-            // Extraer nombres de tablas del SQL (despuÈs de FROM y JOIN)
+            // Extraer nombres de tablas del SQL (despuÔøΩs de FROM y JOIN)
             var tableNames = new List<string>();
             var words = sql.Split(new[] { ' ', '\n', '\t', '(', ')' }, StringSplitOptions.RemoveEmptyEntries);
             
@@ -471,7 +584,7 @@ Use ONLY tables and columns from the schema provided.";
                 
                 if (!exists)
                 {
-                    // Intentar coincidencia flexible (ignorar guiones bajos, espacios, capitalizaciÛn)
+                    // Intentar coincidencia flexible (ignorar guiones bajos, espacios, capitalizaciÔøΩn)
                     var normalizedSearchTable = NormalizeTableName(tableName);
                     var flexibleMatch = schema.Tables.FirstOrDefault(t => 
                         NormalizeTableName(t.TableName) == normalizedSearchTable);
@@ -486,7 +599,7 @@ Use ONLY tables and columns from the schema provided.";
                             flexibleMatch.TableName, 
                             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                         
-                        _logger.LogInformation($"? SQL corregido autom·ticamente: {sql}");
+                        _logger.LogInformation($"? SQL corregido automÔøΩticamente: {sql}");
                         continue;
                     }
                     
@@ -529,7 +642,7 @@ Use ONLY tables and columns from the schema provided.";
                         // Limpiar funciones agregadas (COUNT, SUM, MAX, MIN, AVG, etc.)
                         if (actualColumnName.Contains("(") && actualColumnName.Contains(")"))
                         {
-                            // Verificar si es una funciÛn sin columna especÌfica (ej: COUNT(*))
+                            // Verificar si es una funciÔøΩn sin columna especÔøΩfica (ej: COUNT(*))
                             if (actualColumnName.Contains("COUNT(*)") || 
                                 actualColumnName.Contains("COUNT (*)"))
                             {
@@ -537,7 +650,7 @@ Use ONLY tables and columns from the schema provided.";
                                 continue;
                             }
                             
-                            // Extraer nombre de columna de dentro de la funciÛn (ej: COUNT(Email) -> Email)
+                            // Extraer nombre de columna de dentro de la funciÔøΩn (ej: COUNT(Email) -> Email)
                             var match = System.Text.RegularExpressions.Regex.Match(
                                 actualColumnName, 
                                 @"\w+\s*\(\s*(\w+\.)?(\w+)\s*\)", 
@@ -546,21 +659,31 @@ Use ONLY tables and columns from the schema provided.";
                             if (match.Success && match.Groups.Count > 2)
                             {
                                 actualColumnName = match.Groups[2].Value;
-                                _logger.LogInformation($"?? Columna extraÌda de funciÛn: {actualColumnName}");
+                                _logger.LogInformation($"?? Columna extraÔøΩda de funciÔøΩn: {actualColumnName}");
                             }
                             else
                             {
-                                _logger.LogInformation($"? Ignorando expresiÛn con funciÛn: {columnPart}");
+                                _logger.LogInformation($"? Ignorando expresiÔøΩn con funciÔøΩn: {columnPart}");
                                 continue;
                             }
                         }
                         
-                        // Remover alias de tabla (u.Email -> Email)
+                        // Manejar alias de tabla (u.Email -> Email, u.* -> v√°lido)
                         if (actualColumnName.Contains("."))
                         {
                             var parts = actualColumnName.Split('.');
-                            actualColumnName = parts[parts.Length - 1].Trim();
-                            _logger.LogInformation($"?? Columna sin alias de tabla: {actualColumnName}");
+                            var tableAlias = parts[0].Trim();
+                            var columnName = parts[parts.Length - 1].Trim();
+                            
+                            // Si es *, es v√°lido cuando va precedido de alias de tabla
+                            if (columnName == "*")
+                            {
+                                _logger.LogInformation($"‚úÖ Asterisco con alias de tabla v√°lido: {actualColumnName}");
+                                continue; // Saltar validaci√≥n para u.*, t.*, etc.
+                            }
+                            
+                            actualColumnName = columnName;
+                            _logger.LogInformation($"üîç Columna sin alias de tabla: {actualColumnName}");
                         }
                         
                         // Remover alias de columna (Email AS Correo -> Email)
@@ -570,8 +693,15 @@ Use ONLY tables and columns from the schema provided.";
                             _logger.LogInformation($"?? Columna sin alias: {actualColumnName}");
                         }
                         
-                        // Limpiar caracteres extraÒos
+                        // Limpiar caracteres extraÔøΩos
                         actualColumnName = actualColumnName.Trim('[', ']', '`', '"', '\'', ' ');
+                        
+                        // Manejar el caso de * sin alias (SELECT *)
+                        if (actualColumnName == "*")
+                        {
+                            _logger.LogInformation($"‚úÖ SELECT * detectado - v√°lido");
+                            continue; // * sin alias tambi√©n es v√°lido
+                        }
                         
                         // Verificar si la columna existe en alguna tabla (case-insensitive y flexible)
                         var columnExists = schema.Tables.Any(t => 
@@ -580,7 +710,7 @@ Use ONLY tables and columns from the schema provided.";
                         if (!columnExists)
                         {
                             // Intentar coincidencia flexible
-                            var normalizedSearchColumn = NormalizeTableName(actualColumnName); // Usa el mismo mÈtodo de normalizaciÛn
+                            var normalizedSearchColumn = NormalizeTableName(actualColumnName); // Usa el mismo mÔøΩtodo de normalizaciÔøΩn
                             string? flexibleColumnMatch = null;
                             
                             foreach (var table in schema.Tables)
@@ -603,7 +733,7 @@ Use ONLY tables and columns from the schema provided.";
                                 // Buscar columna similar para sugerir
                                 var suggestion = FindSimilarColumn(actualColumnName, schema);
                                 var suggestionText = suggestion != null 
-                                    ? $" øQuisiste decir '{suggestion}'?" 
+                                    ? $" ÔøΩQuisiste decir '{suggestion}'?" 
                                     : "";
                                 
                                 // Listar columnas disponibles de la tabla principal (si se puede identificar)
@@ -626,7 +756,7 @@ Use ONLY tables and columns from the schema provided.";
                 }
             }
 
-            // Validar columnas en WHERE clause tambiÈn
+            // Validar columnas en WHERE clause tambiÔøΩn
             var whereMatch = System.Text.RegularExpressions.Regex.Match(sql, @"WHERE\s+(.+?)(\s+ORDER BY|\s+GROUP BY|\s*;|\s*$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
             if (whereMatch.Success)
             {
@@ -675,9 +805,9 @@ Use ONLY tables and columns from the schema provided.";
                         {
                             _logger.LogError($"? Columna '{columnName}' en WHERE clause NO existe");
                             var suggestion = FindSimilarColumn(columnName, schema);
-                            var suggestionText = suggestion != null ? $" øQuisiste decir '{suggestion}'?" : "";
+                            var suggestionText = suggestion != null ? $" ÔøΩQuisiste decir '{suggestion}'?" : "";
                             
-                            return (false, $"La columna '{columnName}' en la cl·usula WHERE no existe.{suggestionText}");
+                            return (false, $"La columna '{columnName}' en la clÔøΩusula WHERE no existe.{suggestionText}");
                         }
                         else
                         {
@@ -687,31 +817,11 @@ Use ONLY tables and columns from the schema provided.";
                 }
             }
 
-            // Validar JOINs innecesarios con tablas no relacionadas
-            if (sqlUpper.Contains("NOTIFICACION") && 
-                (sqlUpper.Contains("USUARIO") || sqlUpper.Contains("USER")))
-            {
-                // Verificar si realmente hay una FK entre estas tablas
-                var notificacionTable = schema.Tables.FirstOrDefault(t => 
-                    t.TableName.Equals("Notificacion", StringComparison.OrdinalIgnoreCase));
-                
-                if (notificacionTable != null)
-                {
-                    var hasUserFK = notificacionTable.ForeignKeys.Any(fk =>
-                        fk.ReferencedTable.Equals("Usuario", StringComparison.OrdinalIgnoreCase));
-                    
-                    if (!hasUserFK && sqlUpper.Contains("JOIN"))
-                    {
-                        return (false, "No hay relaciÛn directa entre Usuario y Notificacion. Para preguntas sobre usuarios, solo consulta la tabla Usuario.");
-                    }
-                }
-            }
-
             return (true, string.Empty);
         }
 
         /// <summary>
-        /// Normaliza un nombre de tabla para comparaciÛn flexible (sin guiones, espacios, min˙sculas)
+        /// Normaliza un nombre de tabla para comparaciÔøΩn flexible (sin guiones, espacios, minÔøΩsculas)
         /// </summary>
         private string NormalizeTableName(string tableName)
         {
@@ -724,13 +834,13 @@ Use ONLY tables and columns from the schema provided.";
         }
 
         /// <summary>
-        /// Busca una columna similar en el esquema usando an·lisis sem·ntico autom·tico (SIN mapeos hardcodeados)
+        /// Busca una columna similar en el esquema usando anÔøΩlisis semÔøΩntico automÔøΩtico (SIN mapeos hardcodeados)
         /// </summary>
         private string? FindSimilarColumn(string searchColumn, DatabaseSchema schema)
         {
             searchColumn = searchColumn.ToLower().Trim();
 
-            // 1. B˙squeda EXACTA (ignorando may˙sculas)
+            // 1. BÔøΩsqueda EXACTA (ignorando mayÔøΩsculas)
             foreach (var table in schema.Tables)
             {
                 var exactMatch = table.Columns.FirstOrDefault(c => 
@@ -743,7 +853,7 @@ Use ONLY tables and columns from the schema provided.";
                 }
             }
 
-            // 2. B˙squeda CONTAINS (la columna contiene el tÈrmino buscado)
+            // 2. BÔøΩsqueda CONTAINS (la columna contiene el tÔøΩrmino buscado)
             foreach (var table in schema.Tables)
             {
                 var containsMatch = table.Columns.FirstOrDefault(c => 
@@ -756,7 +866,7 @@ Use ONLY tables and columns from the schema provided.";
                 }
             }
 
-            // 3. B˙squeda INVERSA (el tÈrmino buscado contiene la columna)
+            // 3. BÔøΩsqueda INVERSA (el tÔøΩrmino buscado contiene la columna)
             foreach (var table in schema.Tables)
             {
                 var reverseMatch = table.Columns.FirstOrDefault(c => 
@@ -769,10 +879,10 @@ Use ONLY tables and columns from the schema provided.";
                 }
             }
 
-            // 4. B˙squeda por SIMILITUD (Levenshtein Distance)
+            // 4. BÔøΩsqueda por SIMILITUD (Levenshtein Distance)
             string? bestMatch = null;
             int bestDistance = int.MaxValue;
-            const int MAX_DISTANCE = 3; // M·ximo 3 caracteres de diferencia
+            const int MAX_DISTANCE = 3; // MÔøΩximo 3 caracteres de diferencia
 
             foreach (var table in schema.Tables)
             {
@@ -794,7 +904,7 @@ Use ONLY tables and columns from the schema provided.";
                 return bestMatch;
             }
 
-            // 5. B˙squeda por PALABRAS CLAVE comunes (genÈrico, no hardcodeado)
+            // 5. BÔøΩsqueda por PALABRAS CLAVE comunes (genÔøΩrico, no hardcodeado)
             var keywords = ExtractKeywords(searchColumn);
             foreach (var keyword in keywords)
             {
@@ -811,32 +921,32 @@ Use ONLY tables and columns from the schema provided.";
                 }
             }
 
-            _logger.LogWarning($"? No se encontrÛ ninguna columna similar a '{searchColumn}'");
+            _logger.LogWarning($"? No se encontrÔøΩ ninguna columna similar a '{searchColumn}'");
             return null;
         }
 
         /// <summary>
-        /// Extrae palabras clave de un tÈrmino de b˙squeda (para b˙squeda sem·ntica)
+        /// Extrae palabras clave de un tÔøΩrmino de bÔøΩsqueda (para bÔøΩsqueda semÔøΩntica)
         /// </summary>
         private List<string> ExtractKeywords(string searchTerm)
         {
             var keywords = new List<string>();
             searchTerm = searchTerm.ToLower();
 
-            // Palabras comunes que indican conceptos (genÈrico, no especÌfico a ninguna BD)
+            // Palabras comunes que indican conceptos (genÔøΩrico, no especÔøΩfico a ninguna BD)
             var commonPrefixes = new[] { "is", "has", "get", "set", "user", "name", "date", "time" };
             var commonSuffixes = new[] { "id", "name", "date", "time", "number", "code", "type", "status" };
 
-            // Agregar el tÈrmino completo
+            // Agregar el tÔøΩrmino completo
             keywords.Add(searchTerm);
 
-            // Si el tÈrmino tiene m·s de 4 caracteres, agregar substrings
+            // Si el tÔøΩrmino tiene mÔøΩs de 4 caracteres, agregar substrings
             if (searchTerm.Length > 4)
             {
                 // Primeros 4 caracteres
                 keywords.Add(searchTerm.Substring(0, 4));
                 
-                // ⁄ltimos 4 caracteres
+                // ÔøΩltimos 4 caracteres
                 keywords.Add(searchTerm.Substring(searchTerm.Length - 4));
             }
 
@@ -911,10 +1021,10 @@ Use ONLY tables and columns from the schema provided.";
             {
                 var tableName = table.TableName;
                 
-                // Solo agregar comillas si el nombre tiene may˙sculas
+                // Solo agregar comillas si el nombre tiene mayÔøΩsculas
                 if (tableName.Any(char.IsUpper))
                 {
-                    // PatrÛn 1: FROM/JOIN tableName
+                    // PatrÔøΩn 1: FROM/JOIN tableName
                     var fromJoinPattern = $@"\b(FROM|JOIN|UPDATE|DELETE FROM)\s+{System.Text.RegularExpressions.Regex.Escape(tableName)}\b";
                     var fromJoinReplacement = $@"$1 ""{tableName}""";
                     
@@ -925,7 +1035,7 @@ Use ONLY tables and columns from the schema provided.";
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase
                     );
                     
-                    // PatrÛn 2: tableName con alias (tableName t, tableName AS t)
+                    // PatrÔøΩn 2: tableName con alias (tableName t, tableName AS t)
                     var aliasPattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(tableName)}\s+(AS\s+)?([a-z]+)\b";
                     var aliasReplacement = $@"""{tableName}"" $1$2";
                     
@@ -936,7 +1046,7 @@ Use ONLY tables and columns from the schema provided.";
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase
                     );
                     
-                    // ? NUEVO: PatrÛn 3: Tabla sola sin alias (ej: ON Funcionarios.Id)
+                    // ? NUEVO: PatrÔøΩn 3: Tabla sola sin alias (ej: ON Funcionarios.Id)
                     // Esto captura referencias como: ON Funcionarios."Col", WHERE Funcionarios."Col"
                     var standaloneTablePattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(tableName)}\.";
                     var standaloneTableReplacement = $@"""{tableName}""." ;
@@ -957,13 +1067,13 @@ Use ONLY tables and columns from the schema provided.";
                 {
                     var columnName = column.ColumnName;
                     
-                    // Solo agregar comillas si el nombre tiene may˙sculas
+                    // Solo agregar comillas si el nombre tiene mayÔøΩsculas
                     if (columnName.Any(char.IsUpper))
                     {
-                        // ? IMPORTANTE: Solo agregar comillas si NO hay "AS" inmediatamente despuÈs
+                        // ? IMPORTANTE: Solo agregar comillas si NO hay "AS" inmediatamente despuÔøΩs
                         
-                        // PatrÛn 1: alias.ColumnName (ej: f.Cedula ? f."Cedula")
-                        // SOLO si NO est· seguido de AS
+                        // PatrÔøΩn 1: alias.ColumnName (ej: f.Cedula ? f."Cedula")
+                        // SOLO si NO estÔøΩ seguido de AS
                         var aliasColumnPattern = $@"\b([a-zA-Z_]+)\.{System.Text.RegularExpressions.Regex.Escape(columnName)}(?!\s+AS\s)";
                         var aliasColumnReplacement = $@"$1.""{columnName}""";
                         
@@ -974,8 +1084,8 @@ Use ONLY tables and columns from the schema provided.";
                             System.Text.RegularExpressions.RegexOptions.IgnoreCase
                         );
                         
-                        // PatrÛn 2: ColumnName sin alias (SELECT ColumnName, WHERE ColumnName)
-                        // SOLO si NO est· seguido de AS
+                        // PatrÔøΩn 2: ColumnName sin alias (SELECT ColumnName, WHERE ColumnName)
+                        // SOLO si NO estÔøΩ seguido de AS
                         var standAlonePattern = $@"\b(SELECT|WHERE|AND|OR|ORDER BY|GROUP BY|HAVING|ON)\s+{System.Text.RegularExpressions.Regex.Escape(columnName)}(?!\s+AS\s)";
                         var standAloneReplacement = $@"$1 ""{columnName}""";
                         
@@ -986,8 +1096,8 @@ Use ONLY tables and columns from the schema provided.";
                             System.Text.RegularExpressions.RegexOptions.IgnoreCase
                         );
                         
-                        // PatrÛn 3: ColumnName despuÈs de coma
-                        // SOLO si NO est· seguido de AS
+                        // PatrÔøΩn 3: ColumnName despuÔøΩs de coma
+                        // SOLO si NO estÔøΩ seguido de AS
                         var commaPattern = $@",\s*{System.Text.RegularExpressions.Regex.Escape(columnName)}(?!\s+AS\s)";
                         var commaReplacement = $@", ""{columnName}""";
                         
@@ -1004,6 +1114,279 @@ Use ONLY tables and columns from the schema provided.";
             _logger.LogInformation($"?? SQL con comillas aplicadas: {sql}");
             
             return sql;
+        }
+
+        /// <summary>
+        /// Genera una respuesta simple cuando la interpretaci√≥n con IA falla
+        /// </summary>
+        private string GenerateSimpleResponse(string question, int rowCount, string sql)
+        {
+            if (rowCount == 0)
+            {
+                return $"‚úÖ **Consulta ejecutada correctamente**\n\n" +
+                       $"No se encontraron resultados para: *\"{question}\"*\n\n" +
+                       $"üí° **Sugerencias:**\n" +
+                       $"- Verifica los filtros de b√∫squeda\n" +
+                       $"- Intenta ampliar los criterios\n" +
+                       $"- Revisa la ortograf√≠a de los t√©rminos";
+            }
+            else if (rowCount == 1)
+            {
+                return $"‚úÖ **Consulta ejecutada correctamente**\n\n" +
+                       $"üìä Encontr√© **{rowCount} registro** que coincide con tu b√∫squeda: *\"{question}\"*\n\n" +
+                       $"Los resultados se muestran en la tabla de datos. Puedes descargarlos en CSV o PDF usando los botones de exportaci√≥n.";
+            }
+            else
+            {
+                return $"‚úÖ **Consulta ejecutada correctamente**\n\n" +
+                       $"üìä Encontr√© **{rowCount} registros** que coinciden con tu b√∫squeda: *\"{question}\"*\n\n" +
+                       $"Los resultados se muestran en la tabla de datos. Puedes descargarlos en CSV o PDF usando los botones de exportaci√≥n.";
+            }
+        }
+
+        /// <summary>
+        /// Analiza el mensaje de error para sugerir correcciones de nombres de columnas
+        /// Detecta din√°micamente nombres inv√°lidos en m√∫ltiples idiomas y formatos
+        /// </summary>
+        private string AnalyzeErrorForColumnFix(string errorMessage, DatabaseSchema schema)
+        {
+            var analysis = new System.Text.StringBuilder();
+            
+            // üîç DETECCI√ìN DIN√ÅMICA: Extraer nombres entre comillas/corchetes del mensaje de error
+            var invalidColumn = ExtractInvalidIdentifierFromError(errorMessage, "column");
+            
+            if (!string.IsNullOrEmpty(invalidColumn))
+            {
+                analysis.AppendLine($"\nINVALID COLUMN DETECTED: '{invalidColumn}'");
+                
+                // Buscar columnas similares en el esquema
+                var similarColumns = FindSimilarColumns(invalidColumn, schema);
+                
+                if (similarColumns.Any())
+                {
+                    analysis.AppendLine("\nSUGGESTED CORRECTIONS (use EXACT name):");
+                    foreach (var (table, column, similarity) in similarColumns.Take(5))
+                    {
+                        analysis.AppendLine($"  -> Use: {table}.{column} (similarity: {similarity:P0})");
+                    }
+                }
+                else
+                {
+                    analysis.AppendLine("\nNo similar columns found. Review the schema carefully.");
+                }
+            }
+            
+            // üîç DETECCI√ìN DIN√ÅMICA: Extraer nombre de tabla inv√°lida
+            var invalidTable = ExtractInvalidIdentifierFromError(errorMessage, "table");
+            
+            if (!string.IsNullOrEmpty(invalidTable))
+            {
+                analysis.AppendLine($"\nINVALID TABLE DETECTED: '{invalidTable}'");
+                
+                // Buscar tablas similares
+                var similarTables = schema.Tables
+                    .Select(t => new { Table = t.TableName, Similarity = CalculateSimilarity(invalidTable, t.TableName) })
+                    .Where(x => x.Similarity > 0.5)
+                    .OrderByDescending(x => x.Similarity)
+                    .ToList();
+                
+                if (similarTables.Any())
+                {
+                    analysis.AppendLine("\nSUGGESTED TABLE CORRECTIONS:");
+                    foreach (var item in similarTables.Take(3))
+                    {
+                        analysis.AppendLine($"  -> Use: {item.Table} (similarity: {item.Similarity:P0})");
+                    }
+                }
+            }
+            
+            return analysis.ToString();
+        }
+
+        /// <summary>
+        /// Extrae din√°micamente el nombre del identificador inv√°lido del mensaje de error
+        /// Funciona con m√∫ltiples idiomas y formatos de error usando patrones inteligentes
+        /// </summary>
+        private string ExtractInvalidIdentifierFromError(string errorMessage, string identifierType)
+        {
+            if (string.IsNullOrEmpty(errorMessage))
+                return string.Empty;
+
+            // Lista de patrones para diferentes tipos de errores y idiomas
+            var patterns = new List<string>();
+
+            if (identifierType.ToLower() == "column")
+            {
+                // Patrones para errores de columna (m√∫ltiples idiomas y formatos)
+                patterns.AddRange(new[]
+                {
+                    // Ingl√©s - SQL Server, PostgreSQL, MySQL
+                    @"Invalid column name\s+'([^']+)'",
+                    @"column\s+'([^']+)'.*not found",
+                    @"Unknown column\s+'([^']+)'",
+                    @"no such column:\s+([^\s,]+)",
+                    
+                    // Espa√±ol
+                    @"columna\s+'([^']+)'.*no.*v[a√°]lida",
+                    @"no existe.*columna\s+'?([^\s']+)",
+                    @"columna.*'([^']+)'.*no encontrada",
+                    
+                    // Portugu√©s
+                    @"coluna\s+'([^']+)'.*inv[a√°]lida",
+                    
+                    // Gen√©rico: cualquier identificador entre comillas despu√©s de "column"
+                    @"column[:\s]+'([^']+)'",
+                    
+                    // Formato con corchetes [columnName]
+                    @"column\s+\[([^\]]+)\]",
+                    @"Invalid.*\[([^\]]+)\].*column",
+                    
+                    // Sin comillas (algunos motores)
+                    @"column\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+not",
+                    @"Unknown\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+column"
+                });
+            }
+            else if (identifierType.ToLower() == "table")
+            {
+                // Patrones para errores de tabla (m√∫ltiples idiomas)
+                patterns.AddRange(new[]
+                {
+                    // Ingl√©s
+                    @"Invalid object name\s+'([^']+)'",
+                    @"table\s+'([^']+)'.*not found",
+                    @"Unknown table\s+'([^']+)'",
+                    @"no such table:\s+([^\s,]+)",
+                    @"Table\s+'([^']+)'.*doesn't exist",
+                    
+                    // Espa√±ol
+                    @"tabla\s+'([^']+)'.*no.*existe",
+                    @"objeto.*'([^']+)'.*no.*v[a√°]lido",
+                    @"no.*encontr.*tabla\s+'?([^\s']+)",
+                    
+                    // Portugu√©s
+                    @"tabela\s+'([^']+)'.*n[√£a]o.*existe",
+                    
+                    // Gen√©rico
+                    @"object[:\s]+'([^']+)'",
+                    @"FROM\s+'?([^\s',;]+).*not.*exist",
+                    
+                    // Formato con corchetes [tableName]
+                    @"object\s+\[([^\]]+)\]",
+                    @"Invalid.*\[([^\]]+)\].*table",
+                    
+                    // Sin comillas
+                    @"table\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+not",
+                    @"Unknown\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table"
+                });
+            }
+
+            // üîç Intentar cada patr√≥n hasta encontrar coincidencia
+            foreach (var pattern in patterns)
+            {
+                try
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(
+                        errorMessage,
+                        pattern,
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+
+                    if (match.Success && match.Groups.Count > 1)
+                    {
+                        var identifier = match.Groups[1].Value.Trim();
+                        
+                        // Limpiar prefijos de esquema si existen (ej: "dbo.Usuario" ‚Üí "Usuario")
+                        if (identifier.Contains('.'))
+                        {
+                            var parts = identifier.Split('.');
+                            identifier = parts[parts.Length - 1];
+                        }
+                        
+                        // Remover corchetes/comillas si existen
+                        identifier = identifier.Trim('[', ']', '"', '\'', '`');
+                        
+                        if (!string.IsNullOrWhiteSpace(identifier))
+                        {
+                            _logger.LogInformation($"üîç Detected invalid {identifierType}: '{identifier}' using pattern match");
+                            return identifier;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"‚ö†Ô∏è Error applying regex pattern - {ex.Message}");
+                    continue; // Intentar siguiente patr√≥n
+                }
+            }
+
+            // üÜï FALLBACK DIN√ÅMICO: Buscar cualquier identificador entre comillas en el mensaje
+            var fallbackPattern = @"'([a-zA-Z_][a-zA-Z0-9_]*)'";
+            var fallbackMatch = System.Text.RegularExpressions.Regex.Match(
+                errorMessage,
+                fallbackPattern,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            );
+
+            if (fallbackMatch.Success && fallbackMatch.Groups.Count > 1)
+            {
+                var identifier = fallbackMatch.Groups[1].Value.Trim();
+                _logger.LogInformation($"üîç Detected invalid {identifierType} using fallback pattern: '{identifier}'");
+                return identifier;
+            }
+
+            _logger.LogWarning($"‚ö†Ô∏è Could not dynamically extract {identifierType} name from error: {errorMessage}");
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Busca columnas similares en todo el esquema usando similitud de strings
+        /// </summary>
+        private List<(string Table, string Column, double Similarity)> FindSimilarColumns(string searchColumn, DatabaseSchema schema)
+        {
+            var results = new List<(string Table, string Column, double Similarity)>();
+            
+            foreach (var table in schema.Tables)
+            {
+                foreach (var column in table.Columns)
+                {
+                    var similarity = CalculateSimilarity(searchColumn, column.ColumnName);
+                    
+                    // Considerar similares si coinciden en al menos 60%
+                    if (similarity > 0.6)
+                    {
+                        results.Add((table.TableName, column.ColumnName, similarity));
+                    }
+                }
+            }
+            
+            return results.OrderByDescending(x => x.Similarity).ToList();
+        }
+
+        /// <summary>
+        /// Calcula similitud entre dos strings usando Levenshtein distance
+        /// </summary>
+        private double CalculateSimilarity(string source, string target)
+        {
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target))
+                return 0;
+            
+            // Case-insensitive comparison
+            source = source.ToLower();
+            target = target.ToLower();
+            
+            // Coincidencia exacta
+            if (source == target)
+                return 1.0;
+            
+            // Coincidencia por contenido (uno contiene al otro)
+            if (source.Contains(target) || target.Contains(source))
+                return 0.9;
+            
+            // Levenshtein distance
+            var distance = LevenshteinDistance(source, target);
+            var maxLength = Math.Max(source.Length, target.Length);
+            
+            return 1.0 - ((double)distance / maxLength);
         }
     }
 }

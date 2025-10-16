@@ -26,7 +26,7 @@ namespace AIAssistantSQL.Services
 
         private string NormalizeModelName(string modelName)
         {
-            // La librerÌa Mscc.GenerativeAI usa la API v1beta
+            // La librerÔøΩa Mscc.GenerativeAI usa la API v1beta
             // Los nombres correctos son:
             // - gemini-1.5-flash-latest
             // - gemini-1.5-pro-latest
@@ -80,6 +80,15 @@ namespace AIAssistantSQL.Services
             _configuration["GoogleAI:Model"] = modelName;
         }
 
+        /// <summary>
+        /// Limpia la cach√© de modelos para forzar una actualizaci√≥n
+        /// </summary>
+        public void ClearModelsCache()
+        {
+            // Google AI no necesita cach√© de modelos ya que usa modelos predefinidos
+            _logger.LogInformation("üóëÔ∏è ClearModelsCache llamado pero Google AI no necesita cach√© de modelos");
+        }
+
         public async Task<List<OllamaModel>> GetAvailableModelsAsync()
         {
             return new List<OllamaModel>
@@ -87,19 +96,19 @@ namespace AIAssistantSQL.Services
                 new OllamaModel
                 {
                     Name = "gemini-1.5-flash",
-                    Description = "R·pido y eficiente - RECOMENDADO para SQL",
-                    Size = "Cloud (gratis con lÌmites)"
+                    Description = "RÔøΩpido y eficiente - RECOMENDADO para SQL",
+                    Size = "Cloud (gratis con lÔøΩmites)"
                 },
                 new OllamaModel
                 {
                     Name = "gemini-1.5-pro",
-                    Description = "M·s potente pero m·s lento - Para SQL muy complejo",
-                    Size = "Cloud (gratis con lÌmites menores)"
+                    Description = "MÔøΩs potente pero mÔøΩs lento - Para SQL muy complejo",
+                    Size = "Cloud (gratis con lÔøΩmites menores)"
                 },
                 new OllamaModel
                 {
                     Name = "gemini-pro",
-                    Description = "VersiÛn anterior - Modelo estable",
+                    Description = "VersiÔøΩn anterior - Modelo estable",
                     Size = "Cloud"
                 }
             };
@@ -139,7 +148,7 @@ namespace AIAssistantSQL.Services
             string originalQuestion,
             string executedSql,
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory = null)
+            List<string>? conversationHistory = null)
         {
             try
             {
@@ -153,14 +162,14 @@ namespace AIAssistantSQL.Services
                 var response = await model.GenerateContent(prompt);
                 var interpretation = response?.Text ?? "No se pudo interpretar los resultados.";
 
-                _logger.LogInformation($"? InterpretaciÛn generada");
+                _logger.LogInformation($"? InterpretaciÔøΩn generada");
 
                 return interpretation;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error interpretando resultados con Google AI");
-                return $"? Consulta ejecutada exitosamente ({results.Count} registros encontrados).\n\n*Nota: No se pudo generar interpretaciÛn con IA.*";
+                return $"? Consulta ejecutada exitosamente ({results.Count} registros encontrados).\n\n*Nota: No se pudo generar interpretaciÔøΩn con IA.*";
             }
         }
 
@@ -214,10 +223,10 @@ namespace AIAssistantSQL.Services
         }
 
         private string BuildInterpretationPrompt(
-            string originalQuestion,
-            string executedSql,
+            string originalQuestion, 
+            string executedSql, 
             List<Dictionary<string, object>> results,
-            List<string> conversationHistory)
+            List<string>? conversationHistory)
         {
             var sb = new System.Text.StringBuilder();
 
@@ -228,7 +237,7 @@ namespace AIAssistantSQL.Services
             sb.AppendLine("2. Be clear and concise");
             sb.AppendLine("3. Use ONLY the data from the results provided");
             sb.AppendLine("4. If there's 1 result and user asked for 'the most/least', say 'EL documento es...' (singular)");
-            sb.AppendLine("5. If there are multiple results, say 'EncontrÈ X documentos...' (plural)");
+            sb.AppendLine("5. If there are multiple results, say 'EncontrÔøΩ X documentos...' (plural)");
             sb.AppendLine("6. Present data in markdown tables");
             sb.AppendLine();
             sb.AppendLine($"USER QUESTION: {originalQuestion}");
